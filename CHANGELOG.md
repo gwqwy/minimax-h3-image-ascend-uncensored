@@ -16,6 +16,8 @@
 - `scripts/start_comfyui.sh` 合并为唯一启动脚本：venv PATH 前置、去掉 `--cache-classic`
   （坑 7）与 0.32 补丁时代的多卡并行联动；默认端口 8188
 - `scripts/start_comfyui_image.sh` 删除；`test_t2i.sh` 默认端口改 8188
+- 安全整改：移除 `scripts/set_npu_count.py`（0.32 时代视频多卡并行配置工具，统一后已无引用；
+  含 env 路径拼接无校验的路径穿越风险点）。视频并行配置仍可用姊妹仓库的同名工具
 - `scripts/download_models_image.sh` 扩展为全家桶：`image` / `video` / `all` 三档 +
   `WITH_LORA=1` 可选 Turbo LoRA，双官方仓寻源（TE 同名同内容共用，不重复下载）；
   补 scope 参数校验
