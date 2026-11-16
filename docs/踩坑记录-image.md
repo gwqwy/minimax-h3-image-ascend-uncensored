@@ -5,11 +5,16 @@
 
 ## 坑 0：H3-Image 需要 ComfyUI ≥ 0.45，而昇腾环境普遍是 0.32
 
+> **【2026-11-17 口径更新】** 本坑的 worktree 副本方案已被 **"统一 v0.45.4 单服务"** 取代：
+> 主目录直接升级到 v0.45.4（升级前自动备份本地改动，回滚方法见 `setup_image.sh` 输出），
+> 端口合并为 8188，`start_comfyui_image.sh` 删除。代价：0.32 昇腾视频补丁与 Turbo 节点
+> 不再随主服务生效，视频链路在 0.45 下未验证（模型可先行下载）。副本方案的历史记录保留如下。
+
 - H3-Image 原生节点（`MiniMaxH3ImageConditioning` / `MiniMaxH3LatentUpscaleWithModel` 等）
   在 ComfyUI v0.45.0 进入核心（2026-11-10，day-0 支持）。
 - 昇腾视频版主服务锁定 0.32 + 昇腾补丁（`comfy-ui-changes.patch` 是对着 0.32 写的），
   直接升级主服务风险极大（补丁冲突 + Turbo 插件兼容未知）。
-- **解法**：git worktree 副本。`git fetch v0.45.4` → `git worktree add ComfyUI-045 v0.45.4`，
+- **解法（历史）**：git worktree 副本。`git fetch v0.45.4` → `git worktree add ComfyUI-045 v0.45.4`，
   与主服务共存，models 目录软链共享。
 
 ## 坑 1：`MinimaxH3ImageNode` 是 API 节点，别用错

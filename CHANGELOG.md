@@ -3,6 +3,36 @@
 > 本仓库由 [minimax-h3-ascend-uncensored](https://gitcode.com/sazhihou/minimax-h3-ascend-uncensored)
 > （视频版）衍生，聚焦 **MiniMax-H3-Image 文生图**在昇腾 910B 上的部署与实测。
 
+## 2026-11-17 · 统一 v0.45.4 单服务方案
+
+- **部署口径变更**：废弃 "0.32 视频主服务（8188）+ 0.45.4 worktree 副本（8189）" 双服务结构，
+  主目录 `/mnt/workspace/ComfyUI` 直接升级到 v0.45.4，**单端口 8188 单服务**
+- `scripts/setup_image.sh` 重写为统一升级脚本：
+  - **全新机器直接浅克隆 v0.45.4**（`git clone --depth 1 --branch v0.45.4`，`--branch` 支持
+    tag，无需先拉默认分支再 checkout）；已有 0.32 旧仓走备份升级流程
+  - 升级前自动备份主目录本地改动（0.32 昇腾补丁等）到 `runtime/upgrade-backup-*`，
+    备份内含回滚命令（`previous-head.txt` + `local-changes.patch`）
+  - venv（过滤 torch 系）+ cast_weight device 守卫补丁逻辑不变，幂等
+- `scripts/start_comfyui.sh` 合并为唯一启动脚本：venv PATH 前置、去掉 `--cache-classic`
+  （坑 7）与 0.32 补丁时代的多卡并行联动；默认端口 8188
+- `scripts/start_comfyui_image.sh` 删除；`test_t2i.sh` 默认端口改 8188
+- `scripts/download_models_image.sh` 扩展为全家桶：`image` / `video` / `all` 三档 +
+  `WITH_LORA=1` 可选 Turbo LoRA，双官方仓寻源（TE 同名同内容共用，不重复下载）；
+  补 scope 参数校验
+- **保留视频版仓库**（[sazhihou/minimax-h3-ascend-uncensored](https://gitcode.com/sazhihou/minimax-h3-ascend-uncensored)
+  `scripts/dl_models.py`）**的全部下载地址**：
+  - 完整版 `fl2va_int8_convrot`（34GB，视频段默认档；`LOWVRAM=1` 时与视频版 `--lowvram`
+    一致地换 pruned 21GB）
+  - `video_vae_int8_convrot`（INT8 视频 VAE，32GB 低配档工作流用）
+  - 无审查 heretic TE（ethanfel 仓，26.4GB）：地址保留，但本仓库**默认改为不下载**
+    （`WITH_HERETIC_TE=1` 开启）——非官方渠道 convrot 档，layer_conf 与 0.45 官方加载器
+    兼容性未验证（大概率踩坑 ①）；0.32 口径视频服务可继续使用
+- **未验证项（升级先行，真机复验待做）**：
+  - 统一部署脚本本身（升级/备份/回滚路径）未在 910B 真机复验
+  - 0.32 昇腾视频适配补丁（comfy-ui-changes.patch）与 Turbo 采样节点在 v0.45.4 下的
+    兼容性未知，视频链路暂按不可用处理（模型可先行下载）
+  - 0.32 口径完整视频方案仍见姊妹仓库 [minimax-h3-ascend-uncensored](https://gitcode.com/sazhihou/minimax-h3-ascend-uncensored)
+
 ## 2026-11-17 · 首个公开版本
 
 - **910B 2×64G 真机跑通 H3-Image 文生图**（6 步蒸馏采样，2048×1152 出片）

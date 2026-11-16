@@ -2,12 +2,12 @@
 
 # 🖼️ MiniMax-H3-Image · 昇腾 NPU 本地部署（910B 真机实测）
 
-**在华为昇腾 NPU 上用 ComfyUI 本地跑 MiniMax-H3-Image 文生图**
+**在华为昇腾 NPU 上用 ComfyUI v0.45.4 统一单服务本地跑 MiniMax-H3 文生图**
 6 步蒸馏采样 · 最高 16MP · 多参考图编辑 · 全程离线 · 免费无限量
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform: Ascend NPU](https://img.shields.io/badge/Platform-Ascend_NPU-c8102e)]()
-[![ComfyUI: v0.45.4](https://img.shields.io/badge/ComfyUI-v0.45.4-blue)]()
+[![ComfyUI: v0.45.4 统一单服务](https://img.shields.io/badge/ComfyUI-v0.45.4_统一单服务-blue)]()
 [![Tested: 910B 2×64G](https://img.shields.io/badge/Tested-910B_2%C3%9764G-green)]()
 
 **中文** ｜ [English](#english)
@@ -15,11 +15,11 @@
 </div>
 
 > **🔥 一句话卖点**：官方与社区资料几乎全是 N 卡路线，H3-Image 的原生节点需要 ComfyUI ≥ 0.45，
-> 而昇腾环境的 ComfyUI 普遍停留在 0.32 视频版——本仓库给出**已验证的 0.45.4 副本共存方案**：
-> 主服务（视频）零改动，副本跑文生图，**文字→图片一条命令出图**。
+> 而昇腾环境的 ComfyUI 普遍停留在 0.32 视频版——本仓库给出**统一 v0.45.4 单服务方案**：
+> 主目录直接升级，一条命令出图；不再维护 "0.32 主服务 + 0.45 副本" 双服务结构。
 >
 > **姊妹项目**：
-> - 视频版（fl2va / ref2va / i2v，910B 真机实测）→ [minimax-h3-ascend-uncensored](https://gitcode.com/sazhihou/minimax-h3-ascend-uncensored)
+> - 视频版（fl2va / ref2va / i2v，0.32 口径 910B 真机实测）→ [minimax-h3-ascend-uncensored](https://gitcode.com/sazhihou/minimax-h3-ascend-uncensored)
 > - NVIDIA 路线 → [minimax-h3-nvidia-uncensored](https://gitcode.com/nxxwjbl/minimax-h3-nvidia-uncensored)
 
 ---
@@ -29,10 +29,10 @@
 - [这是什么](#这是什么)
 - [实测环境与结果](#实测环境与结果)
 - [快速开始（三步）](#快速开始三步)
+- [从 0.32 双服务升级（迁移说明）](#从-032-双服务升级迁移说明)
 - [模型清单](#模型清单)
 - [两大兼容性坑与修复](#两大兼容性坑与修复)
 - [文生图工作流](#文生图工作流)
-- [与其他服务的共存](#与其他服务的共存)
 - [常见问题](#常见问题)
 
 ---
@@ -49,9 +49,10 @@ NVIDIA 路线——本仓库把这套东西搬上昇腾：
 | 文生图（6 步蒸馏采样） | ✅ 910B 2×64G 真机跑通 |
 | 2048×1152 出图 | ✅ 实测出片（见 [assets/demo_t2i.png](assets/demo_t2i.png)） |
 | convrot INT8 量化权重直跑 | ✅ 无需 bf16（省一半下载量） |
-| 与视频版主服务共存 | ✅ 8188 视频 / 8189 文生图，互不干扰 |
+| 统一 v0.45.4 单服务（8188 端口） | ✅ 主目录直接升级，告别双服务共存 |
 | 多参考图编辑 | ⏳ 节点已具备（MiniMaxH3ImageConditioning 支持最多 100 张参考图），待实测 |
 | 潜空间放大（MiniMaxH3LatentUpscaleWithModel） | ⏳ 节点已具备，待实测 |
+| 图生视频（fl2va / ref2va） | ⏳ 全套模型可下载；0.32 昇腾视频补丁与 Turbo 节点在 0.45 下**未验证** |
 
 ## 实测环境与结果
 
@@ -59,7 +60,7 @@ NVIDIA 路线——本仓库把这套东西搬上昇腾：
 |---|---|
 | NPU | 昇腾 910B ×2（2×64GB HBM） |
 | CANN / torch_npu | CANNLab 镜像自带（`docs/ENVIRONMENT-910B.txt` 有版本快照） |
-| ComfyUI | v0.45.4（worktree 副本，主服务 0.32 零改动） |
+| ComfyUI | v0.45.4（统一单服务；出图链路在 0.45.4 真机实测通过，统一部署口径变更后待复验） |
 | 模型 | Comfy-Org/MiniMax-H3-Image 官方重打包版（convrot INT8） |
 | 首次加载 | DiT 19.5GB + TE 25.3GB ≈ 45GB 权重 |
 | 出图速度 | 6 步采样，2048×1152 秒级出片（首次运行含权重加载，之后热机更快） |
@@ -68,37 +69,94 @@ NVIDIA 路线——本仓库把这套东西搬上昇腾：
 ## 快速开始（三步）
 
 ```bash
-# ① 部署 ComfyUI v0.45.4 副本（自动建 venv、打兼容性补丁）
-bash scripts/setup_image.sh
+# ① 升级/部署 ComfyUI v0.45.4 统一服务（自动备份本地改动、建 venv、打兼容性补丁）
+bash setup.sh --skip-models        # 或 bash scripts/setup_image.sh
 
-# ② 下载模型（46GB，支持断点续传）
-bash scripts/download_models_image.sh
+# ② 下载模型（文生图 46GB；全家桶 91GB；支持断点续传）
+bash scripts/download_models_image.sh image
 
 # ③ 启动 + 一键文生图
-bash scripts/start_comfyui_image.sh
+bash scripts/start_comfyui.sh
 bash scripts/test_t2i.sh
 ```
 
-看到 `DONE /h3image_t2i_00001_.png` 即为成功；产物在副本 `output/` 目录。
-浏览器访问 `http://<机器IP>:8189` 也可手动操作（左侧队列历史可查历史出图）。
+看到 `DONE /h3image_t2i_00001_.png` 即为成功；产物在主目录 `output/`。
+浏览器访问 `http://<机器IP>:8188` 也可手动操作（左侧队列历史可查历史出图）。
 
-> **已有一条 0.32 视频版主服务？** 直接跑上面三步即可，主服务（端口 8188）零改动。
-> 还没有 ComfyUI？`setup_image.sh` 会自动浅克隆官方仓库再建副本。
+> 还没有 ComfyUI？`setup_image.sh` 会**直接浅克隆 v0.45.4**（`git clone --depth 1 --branch v0.45.4`，
+> `--branch` 支持 tag，无需先拉默认分支再 checkout）；已有 0.32 旧仓的机器走备份升级流程。
+
+## 从 0.32 双服务升级（迁移说明）
+
+此前方案是 "0.32 视频主服务（8188）+ 0.45.4 worktree 副本（8189）" 共存；现已统一为
+**主目录 `/mnt/workspace/ComfyUI` 直接升级 v0.45.4、单端口 8188 单服务**：
+
+- **升级前自动备份**：主目录的本地改动（0.32 昇腾补丁等 tracked 改动）会备份到
+  `/mnt/workspace/runtime/upgrade-backup-<时间戳>/`（`previous-head.txt` + `local-changes.patch`），
+  按脚本输出的回滚命令可随时退回 0.32；模型权重是 untracked 文件，不受升级影响。
+- **端口合并**：8188 由 v0.45.4 服务接管，`start_comfyui.sh` 启动时会先停掉旧 PID
+  （即原 0.32 视频服务）。
+- **启动脚本合并**：`scripts/start_comfyui_image.sh` 已删除，统一用 `scripts/start_comfyui.sh`
+  （venv PATH 前置、不带 `--cache-classic`）。
+- **旧副本清理**：`ComfyUI-045` 副本不再需要，统一服务验证通过后执行
+  `git -C /mnt/workspace/ComfyUI worktree remove --force /mnt/workspace/ComfyUI-045` 清理。
+- **custom_nodes 兼容**：旧主服务的 custom_nodes（0.32 时代昇腾/Turbo 插件）在 0.45 下可能
+  导入失败，ComfyUI 会自动跳过；确认不需要可手动移除。
+- **代价（未验证项）**：0.32 昇腾视频适配补丁（comfy-ui-changes.patch）不再随主服务生效，
+  视频链路在 v0.45.4 下未验证（模型可先下载）。需要 0.32 口径视频服务时，用姊妹仓库
+  [minimax-h3-ascend-uncensored](https://gitcode.com/sazhihou/minimax-h3-ascend-uncensored)
+  或按升级备份回滚。
 
 ## 模型清单
 
-全部来自 **Comfy-Org/MiniMax-H3-Image 官方重打包版**（[HuggingFace](https://huggingface.co/Comfy-Org/MiniMax-H3-Image)），
-脚本默认走 [hf-mirror.com](https://hf-mirror.com) 国内直连：
+下载地址与视频版仓库（[sazhihou/minimax-h3-ascend-uncensored](https://gitcode.com/sazhihou/minimax-h3-ascend-uncensored)
+的 `scripts/dl_models.py`）保持一致；官方档来自 Comfy-Org 重打包版
+（文生图 [H3-Image](https://huggingface.co/Comfy-Org/MiniMax-H3-Image)，
+图生视频 [H3](https://huggingface.co/Comfy-Org/MiniMax-H3)），脚本默认走
+[hf-mirror.com](https://hf-mirror.com) 国内直连。下载档位：
+
+```bash
+bash scripts/download_models_image.sh image     # 只文生图（46GB，setup.sh 默认档）
+bash scripts/download_models_image.sh video     # 只图生视频（62GB，默认完整版 fl2va）
+LOWVRAM=1 bash scripts/download_models_image.sh video    # 视频段低配档：pruned fl2va 21GB 替代完整版
+bash scripts/download_models_image.sh           # 全部（约 108GB）
+WITH_LORA=1 bash scripts/download_models_image.sh video      # 视频段 + Turbo 加速 LoRA（+5.5GB）
+WITH_HERETIC_TE=1 bash scripts/download_models_image.sh all  # 额外无审查 heretic TE（+26.4GB）
+```
+
+文生图三件套（必下）：
 
 | 文件 | 大小 | 放置目录 | 说明 |
 |---|---|---|---|
 | `minimax_h3_image_pruned_int8_convrot.safetensors` | 19.54 GB | `models/diffusion_models/` | DiT 主模型（INT8 convrot，实测可跑） |
-| `qwen3vl_32b_minimax_h3_int8_convrot.safetensors` | 25.28 GB | `models/text_encoders/official/` | **必须官方版**（见下方坑 ①），子目录随意但工作流里要带前缀 |
+| `qwen3vl_32b_minimax_h3_int8_convrot.safetensors` | 25.28 GB | `models/text_encoders/official/` | **必须官方版**（见坑 ①），文生图/图生视频共用 |
 | `minimax_h3_image_vae_fp16.safetensors` | 1.09 GB | `models/vae/` | image VAE |
 
-> **重要**：`text_encoders/official/` 里的 TE **只给 0.45 副本用**。
-> 0.32 视频主服务用的是另一份（昇腾视频仓库版）`qwen3vl_32b_minimax_h3_int8_convrot.safetensors`
-> （直接放 `models/text_encoders/` 根目录），两者同名不同内容、互不干扰。
+图生视频模型（可选，⚠️ 0.45 下视频链路未验证）：
+
+| 文件 | 大小 | 放置目录 |
+|---|---|---|
+| `minimax_h3_fl2va_int8_convrot.safetensors` | 34 GB | `models/diffusion_models/`（完整版，默认） |
+| `minimax_h3_fl2va_pruned_int8_convrot.safetensors` | 19.53 GB | `models/diffusion_models/`（`LOWVRAM=1` 低配档） |
+| `minimax_h3_ref2va_pruned_int8_convrot.safetensors` | 19.53 GB | `models/diffusion_models/` |
+| `minimax_h3_video_vae_fp16.safetensors` | 4.85 GB | `models/vae/` |
+| `minimax_h3_video_vae_int8_convrot.safetensors` | ~3 GB | `models/vae/`（32GB 低配档工作流用） |
+| `minimax_h3_audio_vae_fp32.safetensors` | 0.56 GB | `models/vae/` |
+
+Turbo 加速 LoRA（可选，4/8 步出片，`WITH_LORA=1` 时下载）：`loras/` 下三个 1.82GB 文件。
+
+无审查 heretic TE（可选，`WITH_HERETIC_TE=1` 时下载，与视频版仓库同地址）：
+
+| 文件 | 大小 | 放置目录 |
+|---|---|---|
+| `qwen3vl_32b_h3_ultra_uncensored_heretic_int8_convrot.safetensors` | 26.4 GB | `models/text_encoders/`（根目录） |
+
+> **重要**：官方 TE 必须放 `official/` 子目录（坑 ①）；单独只下 `video` 档时 TE 不会
+> 重复下载，请确保 `image` 档的官方 TE 已就位。工作流里引用官方 TE 要带子目录前缀：
+> `official/qwen3vl_32b_minimax_h3_int8_convrot.safetensors`。
+> heretic TE 属**非官方渠道** convrot 档，放根目录且与官方档同名不同物；其 layer_conf 与
+> 0.45 官方加载器的兼容性**未验证**（大概率踩坑 ①），故本仓库默认不下载（视频版仓库默认下载、
+> 配 0.32 服务使用），`WITH_HERETIC_TE=1` 可先囤权重。
 
 ## 两大兼容性坑与修复
 
@@ -119,7 +177,7 @@ bash scripts/test_t2i.sh
 - **根因**：torch_npu 劫持 `nn.Module.to()`，权重搬运时会以 `(device)` 为参调用模块的
   `cast_weight` 钩子；ComfyUI 0.45 的实现直接取 `input.dtype`，而 `torch.device` 没有 `.dtype`
 - **修复**：给 `comfy/ops.py` 里所有 `def cast_weight(self, input):` 加 device 守卫
-  （`setup_image.sh` 已自动完成）：
+  （`setup_image.sh` 已自动完成，现打在主目录）：
 
   ```python
   def cast_weight(self, input):
@@ -128,10 +186,9 @@ bash scripts/test_t2i.sh
       return CastBiasWeightContext(...)
   ```
 
-- **影响面**：只动副本（`ComfyUI-045/comfy/ops.py`），主服务零改动；
-  forward 正常路径传入张量，行为不变
+- **影响面**：只动 `comfy/ops.py` 的钩子路径；forward 正常路径传入张量，行为不变
 
-更多过程记录（软链坑 / venv 升级 torch 风险 / hf-mirror 429 等）见
+更多过程记录（venv 升级 torch 风险 / 软链坑 / hf-mirror 429 等）见
 [docs/踩坑记录-image.md](docs/踩坑记录-image.md)。
 
 ## 文生图工作流
@@ -141,7 +198,7 @@ bash scripts/test_t2i.sh
 | 文件 | 形态 | 用法 |
 |---|---|---|
 | `image_minimax_h3_t2i.json` | UI 格式（官方模板，subgraph 封装） | 浏览器里 Workflows → Open 直接加载，改提示词点 Queue |
-| `minimax_h3_image_t2i_api.json` | API 格式（`/prompt` 直用） | `curl -X POST http://127.0.0.1:8189/prompt -d @...`，或用 `scripts/test_t2i.sh` |
+| `minimax_h3_image_t2i_api.json` | API 格式（`/prompt` 直用） | `curl -X POST http://127.0.0.1:8188/prompt -d @...`，或用 `scripts/test_t2i.sh` |
 
 节点链（API 版）：
 
@@ -158,17 +215,21 @@ ConditioningZeroOut ── negative ──────────────�
 > `MiniMaxH3ImageConditioning` 是**双输出节点**（CONDITIONING + 内置 LATENT），
 > 官方调优区域为 2048×2048（4MP）；自定义尺寸要求宽×高在 0.65MP~20MP、宽高比 ≤3:1、边长 16 的倍数。
 
-## 与其他服务的共存
-
-| 服务 | 端口 | 目录 | ComfyUI | 用途 |
-|---|---|---|---|---|
-| 视频主服务 | 8188 | `/mnt/workspace/ComfyUI` | 0.32 + 昇腾补丁 | fl2va / ref2va / i2v |
-| **本仓库副本** | **8189** | `/mnt/workspace/ComfyUI-045` | **0.45.4** | **H3-Image 文生图** |
-
-两者共享 `models/`（软链），模型文件互不覆盖（TE 官方版在 `official/` 子目录）。
-视频主服务需要 Python 依赖时用系统环境；副本一律走 venv。
-
 ## 常见问题
+
+**Q：为什么从 "副本共存" 改成统一升级？**
+双服务要维护两份 ComfyUI、两套补丁口径和两个端口；统一后只维护一份 v0.45.4，
+部署/启动/测试脚本各一份。代价是 0.32 视频补丁不再生效（见迁移说明）。
+
+**Q：统一到 0.45 后，视频（fl2va / ref2va）还能跑吗？**
+模型可以先用 `download_models_image.sh video` 下载，但 0.32 昇腾视频适配补丁与 Turbo
+采样节点尚未在 v0.45.4 上验证，视频链路暂按不可用处理。需要 0.32 口径视频服务时用
+姊妹仓库的部署方案，或按升级备份回滚。
+
+**Q：无审查（uncensored）怎么开？**
+社区 heretic TE 就是无审查文本编码器：`WITH_HERETIC_TE=1` 下载（26.4GB，放
+`text_encoders/` 根目录）。注意它是非官方渠道 convrot 档，0.45 官方加载器兼容性未验证
+（可能踩坑 ①）——可先囤权重，真机验证通过后再改工作流引用；0.32 口径视频服务可直接用。
 
 **Q：为什么不用 bf16 版（37.5GB）？**
 convrot INT8 版官方教程同样推荐，实测 NPU 直跑没问题，下载量省一半。追求极致画质可自行换 bf16
@@ -185,7 +246,7 @@ H3-Image 原生节点（`MiniMaxH3ImageConditioning` 等）在 v0.45.0 才进入
 
 **Q：显存不够 / 16MP 直出？**
 2×64GB 起步即可跑 2MP 档；16MP（4096×4096）建议先用 `MiniMaxH3LatentUpscaleWithModel`
-从低分辨率 latent 放大，或用 `--lowvram` 启动。
+从低分辨率 latent 放大，或用 `LOWVRAM=1 bash scripts/start_comfyui.sh`（`--lowvram`）启动。
 
 **Q：下载报 429 / 卡在某个文件？**
 hf-mirror 是共享配额，被限流时稍等重跑 `download_models_image.sh`（自动断点续传）。
@@ -197,19 +258,24 @@ hf-mirror 是共享配额，被限流时稍等重跑 `download_models_image.sh`�
 ## English
 
 **MiniMax-H3-Image (text-to-image, 6-step distilled sampling, up to 16MP) running fully
-offline on Huawei Ascend 910B NPUs via ComfyUI v0.45.4.**
+offline on Huawei Ascend 910B NPUs via a single unified ComfyUI v0.45.4 service (port 8188).**
 
-This repo packages a verified deployment path that **coexists with an existing ComfyUI 0.32
-video service**: the main service stays untouched while a git-worktree replica at v0.45.4
-serves H3-Image text-to-image on port 8189.
+This repo packages a verified text-to-image path for Ascend. The deployment has been **unified**:
+instead of the earlier "0.32 video main service + 0.45.4 worktree replica" coexistence, the main
+ComfyUI checkout (`/mnt/workspace/ComfyUI`) is upgraded in place to v0.45.4 — local changes are
+auto-backed-up before the upgrade with a documented rollback, and a single service now serves
+both text-to-image (verified) and video models (download supported, pipeline on 0.45 unverified).
 
 Three steps:
 
 ```bash
-bash scripts/setup_image.sh           # deploy v0.45.4 replica + venv + compat patches
-bash scripts/download_models_image.sh # 46GB of official Comfy-Org weights (resumable)
-bash scripts/start_comfyui_image.sh   # start on port 8189
-bash scripts/test_t2i.sh              # one-shot text-to-image smoke test
+bash scripts/setup_image.sh                 # upgrade/deploy unified v0.45.4 + venv + compat patches
+                                            # (fresh machines clone v0.45.4 directly via `git clone --branch`)
+bash scripts/download_models_image.sh image # 46GB official Comfy-Org weights (resumable)
+                                            # scopes: image / video / all, plus LOWVRAM=1, WITH_LORA=1,
+                                            # WITH_HERETIC_TE=1 (uncensored TE, 0.45 compatibility unverified)
+bash scripts/start_comfyui.sh               # single service on port 8188
+bash scripts/test_t2i.sh                    # one-shot text-to-image smoke test
 ```
 
 Two Ascend-specific pitfalls are documented and auto-patched: text-encoder weights must be

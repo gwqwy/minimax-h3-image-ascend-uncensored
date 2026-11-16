@@ -4,12 +4,12 @@
 # 用法: bash scripts/test_t2i.sh [提示词] [宽] [高] [端口]
 # 示例:
 #   bash scripts/test_t2i.sh                                          # 默认提示词 2048x1152
-#   bash scripts/test_t2i.sh "a red sports car on a mountain road" 2048 1152 8189
+#   bash scripts/test_t2i.sh "a red sports car on a mountain road" 2048 1152 8188
 #
-# 依赖: scripts/download_models_image.sh 已完成，服务已启动（start_comfyui_image.sh）
+# 依赖: scripts/download_models_image.sh 已完成，服务已启动（start_comfyui.sh）
 set -euo pipefail
 
-API="http://127.0.0.1:${4:-8189}"
+API="http://127.0.0.1:${4:-8188}"
 PROMPT="${1:-ancient chinese fantasy, a white-robed swordswoman standing on a bamboo sea peak, moonlight like water, robe and long hair flowing in wind, her sword glowing with azure spirit light, distant mountains wrapped in mist and cloud, cinematic composition, low-angle shot, guofeng fantasy aesthetic, ultra detailed}"
 W="${2:-2048}"
 H="${3:-1152}"
