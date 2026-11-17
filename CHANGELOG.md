@@ -42,6 +42,9 @@
   错误页。现脚本仓内路径与本地路径分离（`add <仓库> <仓内路径> <本地路径> <字节>`），
   下载 URL 改用仓内真实路径 `text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors`
 - 下载脚本新增启动提醒横幅（档位/文件数/总量/磁盘余量检查）
+- **新增下载进度观测**：`scripts/dl_progress.sh` 进度快照（每文件 du 实测落盘字节 vs
+  预期大小的百分比 + 总计 + 活动分片数，配 `watch -n 10` 刷新）；分片下载器 reporter
+  每 30s 增加每文件百分比输出；curl 回退模式补 `--progress-bar` 进度条
 - `setup_image.sh` 新增 **`REDEPLOY=1` 重新部署模式**：停旧服务 → 旧主目录整体挪走留档
   （`ComfyUI-old-<时间戳>`，同盘改名不耗时）→ 全新克隆 v0.45.4 → `models` / `output` /
   `user` 自动迁回（`custom_nodes` 不迁回，0.32 时代插件与 0.45 不兼容）→ venv + 补丁；

@@ -333,6 +333,15 @@ H3-Image 原生节点（`MiniMaxH3ImageConditioning` 等）在 v0.45.0 才进入
 2×64GB 起步即可跑 2MP 档；16MP（4096×4096）建议先用 `MiniMaxH3LatentUpscaleWithModel`
 从低分辨率 latent 放大，或用 `LOWVRAM=1 bash scripts/start_comfyui.sh`（`--lowvram`）启动。
 
+**Q：怎么看下载进度（命令行）？**
+三个渠道：
+1. **下载器自报**：每 30 秒打印一行聚合速度 + 每文件百分比（`文件名: 8.20/19.54GB (41%)`），就在下载终端里
+2. **另开终端刷快照**：`watch -n 10 bash scripts/dl_progress.sh` —— 每文件 `du` 实测落盘字节 / 预期大小的进度表 + 总计百分比 + 活动分片数
+3. **回看 tmux**：`tmux ls` 找会话、`tmux attach` 进入；curl 回退模式也带 `--progress-bar` 进度条
+
+> 注意：分片下载器会把目标文件**预分配为稀疏文件**，`ls -l` / `stat -c%s` 看着永远是全尺寸；
+> 判断真实进度请看 `du`（`dl_progress.sh` 已处理这个坑）。
+
 **Q：下载报 429 / 卡在某个文件？**
 hf-mirror 是共享配额，被限流时稍等重跑 `download_models_image.sh`（自动断点续传）。
 

@@ -148,6 +148,8 @@ echo " 档位: $SCOPE   文件数: ${#FILES[@]}   预计下载: 约 $((TOTAL / 1
 echo " 目标目录: $MODELS_DIR"
 echo " 下载源  : $MIRROR（共享配额，遇 429 限流稍等重跑本脚本，自动断点续传）"
 echo " 建议在 tmux/screen 中执行，避免 SSH 断线中断"
+echo " 看进度: 下载器每 30s 自报速度与每文件百分比；另开终端可跑"
+echo "         watch -n 10 bash scripts/dl_progress.sh（du 实测落盘字节的进度快照）"
 AVAIL="$(df -B1 "$MODELS_DIR" 2>/dev/null | awk 'NR==2{print $4}' || true)"
 if [ -n "$AVAIL" ] && [ "$AVAIL" -lt "$((TOTAL * 12 / 10))" ]; then
   echo " !! 磁盘余量偏低: 可用约 $((AVAIL / 1000000000)) GB < 总量 1.2 倍（约 $((TOTAL * 12 / 10 / 1000000000)) GB）"
@@ -198,10 +200,10 @@ for rel in "${!FILES[@]}"; do
       continue
     fi
     echo "… 文件不完整（$size < $expect），断点续传: $rel"
-    curl -sL --retry 3 --max-time 7200 -C - -o "$dst" "${URL_OF[$rel]}"
+    curl -L --progress-bar --retry 3 --max-time 7200 -C - -o "$dst" "${URL_OF[$rel]}"
   else
     echo "… 下载: $rel (预期 ≥ $expect bytes)"
-    curl -sL --retry 3 --max-time 7200 -o "$dst" "${URL_OF[$rel]}"
+    curl -L --progress-bar --retry 3 --max-time 7200 -o "$dst" "${URL_OF[$rel]}"
   fi
 
   size=$(stat -c%s "$dst")
