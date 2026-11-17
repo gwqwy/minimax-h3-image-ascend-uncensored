@@ -194,8 +194,9 @@ rm -rf /mnt/workspace/ComfyUI-045   # 若存在（旧 worktree 副本）
 ## 模型清单
 
 下载地址与视频版仓库（[sazhihou/minimax-h3-ascend-uncensored](https://gitcode.com/sazhihou/minimax-h3-ascend-uncensored)
-的 `scripts/dl_models.py`）保持一致，下载引擎也移植自它（`scripts/dl_models_fast.py`，
-分片并行实测聚合 ~40MB/s；`MAX_CONN` / `FILES_PARALLEL` 可调并发）。官方档来自 Comfy-Org
+的 `scripts/dl_models.py`）保持一致，下载引擎也移植自它（**内嵌在
+`download_models_image.sh` 里，单文件自包含**，分片并行实测聚合 ~40MB/s；
+`MAX_CONN` / `FILES_PARALLEL` 可调并发）。官方档来自 Comfy-Org
 重打包版（文生图 [H3-Image](https://huggingface.co/Comfy-Org/MiniMax-H3-Image)，
 图生视频 [H3](https://huggingface.co/Comfy-Org/MiniMax-H3)），脚本默认走
 [hf-mirror.com](https://hf-mirror.com) 国内直连。下载档位：

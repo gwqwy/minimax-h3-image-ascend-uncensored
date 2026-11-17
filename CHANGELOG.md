@@ -45,10 +45,17 @@
 - **新增下载进度观测**：`scripts/dl_progress.sh` 进度快照（每文件 du 实测落盘字节 vs
   预期大小的百分比 + 总计 + 活动分片数，配 `watch -n 10` 刷新）；分片下载器 reporter
   每 30s 增加每文件百分比输出；curl 回退模式补 `--progress-bar` 进度条
+- **修复：下载引擎内嵌自包含**。曾以独立 `scripts/dl_models_fast.py` 分发，该文件漏入库时
+  主机端 `python3: can't open file` → 静默退化为 curl 慢速（真机复现）。现引擎以 heredoc
+  内嵌于 `download_models_image.sh`，运行时落临时文件执行，**单文件自包含**，杜绝
+  "配套文件缺失"故障；独立 `.py` 已移除
 - `setup_image.sh` 新增 **`REDEPLOY=1` 重新部署模式**：停旧服务 → 旧主目录整体挪走留档
   （`ComfyUI-old-<时间戳>`，同盘改名不耗时）→ 全新克隆 v0.45.4 → `models` / `output` /
   `user` 自动迁回（`custom_nodes` 不迁回，0.32 时代插件与 0.45 不兼容）→ venv + 补丁；
   适合老目录状态混乱时的推倒重来，模型无需重新下载
+- **修复启动脚本覆盖 PATH 导致 comfy_kitchen 导入崩溃**（踩坑记录坑 8）：PATH 改前置
+  保留 CANN 编译器目录 + bisheng 自动探测注入 `TRITON_NPU_COMPILER_PATH`；
+  `start_comfyui.sh` 启动前打印日志位置与测试指引
 - **未验证项（升级先行，真机复验待做）**：
   - 统一部署脚本本身（升级/备份/回滚路径）未在 910B 真机复验
   - 0.32 昇腾视频适配补丁（comfy-ui-changes.patch）与 Turbo 采样节点在 v0.45.4 下的

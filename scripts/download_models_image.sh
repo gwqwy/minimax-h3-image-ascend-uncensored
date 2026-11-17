@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # MiniMax-H3 全家桶模型下载（Comfy-Org 官方重打包版，hf-mirror 国内直连）
 #
-# 下载方式：默认走分片并行下载器 dl_models_fast.py（移植自视频版仓库实测引擎，
-# 32 连接/文件 × 2 文件并行，聚合 ~40MB/s）；环境无 python3/requests 时自动
-# 回退单连接 curl（~20MB/s）。两条路径都支持断点续传。
+# 下载方式：内置分片并行下载引擎（移植自视频版仓库 sazhihou/minimax-h3-ascend-uncensored
+# 的 dl_models.py 真机实测引擎，32 连接/文件 × 2 文件并行，聚合 ~40MB/s）。
+# 引擎以 heredoc 内嵌于本脚本，运行时落到临时文件执行——**单文件自包含**，
+# 不存在"配套 .py 没跟上导致回退"的故障模式。环境无 python3/requests 时
+# 自动回退单连接 curl（~20MB/s）。两条路径都支持断点续传。
 #
 # 用法:
 #   bash scripts/download_models_image.sh          # 全部（文生图 + 图生视频，约 108 GB）
@@ -46,8 +48,9 @@
 # !! 官方 TE 必须放本地 official/ 子目录（与同名旧档隔离）：
 #    仓内真实路径是 text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors——
 #    Comfy-Org/MiniMax-H3-Image 仓里并没有 official/ 子目录，URL 带上它只会 404。
-#    其他渠道同名 qwen3vl convrot 会报 JSONDecodeError: char 0（见 docs/踩坑记录-image.md 坑 ①）。
-#    文生图与图生视频共用这一份官方 TE，无需重复下载。
+#
+# 看进度: 引擎每 30s 自报速度与每文件百分比；另开终端可跑
+#         watch -n 10 bash scripts/dl_progress.sh（du 实测落盘字节的进度快照）
 set -euo pipefail
 
 MODELS_DIR="${COMFY_MODELS:-/mnt/workspace/ComfyUI/models}"
@@ -148,7 +151,7 @@ echo " 档位: $SCOPE   文件数: ${#FILES[@]}   预计下载: 约 $((TOTAL / 1
 echo " 目标目录: $MODELS_DIR"
 echo " 下载源  : $MIRROR（共享配额，遇 429 限流稍等重跑本脚本，自动断点续传）"
 echo " 建议在 tmux/screen 中执行，避免 SSH 断线中断"
-echo " 看进度: 下载器每 30s 自报速度与每文件百分比；另开终端可跑"
+echo " 看进度: 引擎每 30s 自报速度与每文件百分比；另开终端可跑"
 echo "         watch -n 10 bash scripts/dl_progress.sh（du 实测落盘字节的进度快照）"
 AVAIL="$(df -B1 "$MODELS_DIR" 2>/dev/null | awk 'NR==2{print $4}' || true)"
 if [ -n "$AVAIL" ] && [ "$AVAIL" -lt "$((TOTAL * 12 / 10))" ]; then
@@ -160,22 +163,206 @@ echo ""
 
 mkdir -p "$MODELS_DIR"
 
-# --- 快路径：分片并行下载器（视频版同款引擎，聚合 ~40MB/s） ---
-PY=""
-if command -v python3 >/dev/null 2>&1 && python3 -c "import requests" >/dev/null 2>&1; then
-  PY="python3"
-fi
+MANIFEST="$(mktemp /tmp/h3_manifest.XXXXXX)"
+PYTMP="$(mktemp /tmp/h3_dl_engine.XXXXXX.py)"
+cleanup() { rm -f "$MANIFEST" "$PYTMP"; }
+trap cleanup EXIT
 
-MANIFEST="$(mktemp)"
-trap 'rm -f "$MANIFEST"' EXIT
 : > "$MANIFEST"
 for rel in "${!FILES[@]}"; do
   printf '%s\t%s\t%s\n' "${URL_OF[$rel]}" "$MODELS_DIR/$rel" "${FILES[$rel]}" >> "$MANIFEST"
 done
 
+# --- 内置分片并行下载引擎（自包含，heredoc 落临时文件执行） ---
+# 引擎移植自视频版仓库真机实测代码：64MB 分片 × MAX_CONN 连接/文件 × FILES_PARALLEL 文件，
+# 分片级断点续传（.p<offset> 进度文件）、精确大小校验、仅允许 https://hf-mirror.com 源、
+# 目标路径强制锁在 --root 内且仅 .safetensors（SSRF/路径穿越防护）。
+cat > "$PYTMP" <<'PYEOF'
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+import argparse, os, sys, threading, time
+from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import urlparse
+import requests
+
+MIRROR_HOST = "hf-mirror.com"
+CHUNK = 64 * 1024 * 1024
+NCHUNK = int(os.environ.get("MAX_CONN", "32"))
+FILES_PARALLEL = int(os.environ.get("FILES_PARALLEL", "2"))
+REQ_TIMEOUT = int(os.environ.get("H3_DL_TIMEOUT", "90"))
+
+lock = threading.Lock()
+total = [0]        # 本次会话累计字节
+done = [False]
+ROOT = [None]      # models 根目录（路径穿越防护边界），由 --root 注入
+prog = {}          # 文件名 -> [本次会话已写字节, 文件总字节]，reporter 每 30s 打印
+
+
+def check_url(url):
+    """SSRF 防护：仅允许 https://hf-mirror.com/（域名精确匹配）"""
+    u = urlparse(url)
+    if u.scheme != "https" or u.hostname != MIRROR_HOST:
+        raise SystemExit(f"URL 非法（仅允许 https://{MIRROR_HOST}/）: {url}")
+
+
+def check_dest(dest, root):
+    """路径穿越防护：目标必须在 models 根目录内且为 .safetensors"""
+    rp_dest = os.path.realpath(dest)
+    rp_root = os.path.realpath(root)
+    if os.path.commonpath([rp_dest, rp_root]) != rp_root:
+        raise SystemExit(f"目标路径越界（必须在 {root} 内）: {dest}")
+    if os.path.basename(dest) == "" or not os.path.basename(dest).endswith(".safetensors"):
+        raise SystemExit(f"目标文件名非法（仅允许 .safetensors）: {dest}")
+
+
+def load_manifest(path, root):
+    """解析 manifest：url<TAB>dest<TAB>expect_min_bytes，并做源与目标校验"""
+    items = []
+    with open(path, encoding="utf-8") as f:
+        for ln, line in enumerate(f, 1):
+            line = line.rstrip("\n")
+            if not line:
+                continue
+            parts = line.split("\t")
+            if len(parts) != 3:
+                raise SystemExit(f"manifest 每行三列（url\\tdest\\texpect）: {line[:100]}")
+            url, dest, expect = parts
+            check_url(url)
+            check_dest(dest, root)
+            items.append((url, dest, int(expect)))
+    if not items:
+        raise SystemExit("manifest 为空")
+    return items
+
+
+def head_size(url):
+    with requests.head(url, allow_redirects=True, timeout=60) as r:
+        return int(r.headers["Content-Length"])
+
+
+def dl(url, path, expect_min):
+    """单文件下载：分片并行 + 断点续传，返回是否完整"""
+    check_url(url)            # SSRF 防护：请求前再次校验源白名单
+    check_dest(path, ROOT[0])
+    fname = os.path.basename(path)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    size = head_size(url)
+    if os.path.exists(path) and os.path.getsize(path) == size:
+        print(f"[跳过] {fname} ({size / 1e9:.2f}GB 已存在)", flush=True)
+        return True
+    with lock:
+        prog[fname] = [0, size]   # 供 reporter 打印每文件进度
+
+    print(f"[下载] {fname} ({size / 1e9:.2f}GB)", flush=True)
+    # 预分配目标文件
+    if not os.path.exists(path) or os.path.getsize(path) != size:
+        with open(path, "wb" if not os.path.exists(path) else "r+b") as f:
+            f.truncate(size)
+
+    ranges, s = [], 0
+    while s < size:
+        e = min(s + CHUNK - 1, size - 1)
+        ranges.append((s, e))
+        s = e + 1
+
+    def get(rg):
+        a, b = rg
+        check_url(url)        # SSRF 防护：每个分片请求前校验源白名单
+        pf = f"{path}.p{a}"   # 分片进度文件（.gitignore 已忽略 *.p[0-9]*）
+        pos = a + (os.path.getsize(pf) if os.path.exists(pf) else 0)
+        for _ in range(6):
+            try:
+                while pos <= b:
+                    r = requests.get(url, headers={"Range": f"bytes={pos}-{b}"},
+                                     stream=True, timeout=REQ_TIMEOUT)
+                    r.raise_for_status()
+                    with open(pf, "ab") as f, open(path, "r+b") as t:
+                        t.seek(pos)
+                        for buf in r.iter_content(1 << 20):
+                            if buf:
+                                f.write(buf)
+                                t.write(buf)
+                                pos += len(buf)
+                                with lock:
+                                    total[0] += len(buf)
+                                    prog[fname][0] += len(buf)
+                break
+            except Exception as e:
+                print(f"  [重试] {fname} @{a}: {repr(e)[:60]}", flush=True)
+        else:
+            return False      # 6 次重试后仍失败（for-else：无 break 即全失败）
+        if os.path.exists(pf):
+            os.remove(pf)
+        return True
+
+    ok = True
+    with ThreadPoolExecutor(max_workers=NCHUNK) as ex:
+        for ret in ex.map(get, ranges):
+            ok = ok and ret
+    # 清理残留进度分片（数据已写入目标文件本身）
+    for a, _ in ranges:
+        pf = f"{path}.p{a}"
+        if os.path.exists(pf):
+            os.remove(pf)
+
+    if os.path.getsize(path) != size:
+        ok = False
+    if ok and os.path.getsize(path) < expect_min:
+        print(f"  !! {fname} 小于预期 {expect_min} 字节，疑似限流错误页", flush=True)
+        ok = False
+    print(f"[{'完成' if ok else '未完成'}] {fname}", flush=True)
+    return ok
+
+
+def reporter():
+    last = [0]
+    while not done[0]:
+        time.sleep(30)
+        d = (total[0] - last[0]) / 30 / 1e6
+        last[0] = total[0]
+        print(f"  --- 速度 {d:.1f} MB/s，本次累计 {total[0] / 1e9:.2f} GB", flush=True)
+        with lock:
+            snap = sorted(prog.items())
+        for k, (w, t) in snap:
+            if t:
+                print(f"      {k}: {w / 1e9:.2f}/{t / 1e9:.2f}GB ({w * 100 // t}%)", flush=True)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--manifest", required=True, help="TSV: url\\tdest\\texpect_min_bytes")
+    ap.add_argument("--root", required=True, help="下载目标根目录（路径穿越防护边界）")
+    args = ap.parse_args()
+    ROOT[0] = args.root
+    items = load_manifest(args.manifest, args.root)
+    print(f"分片并行下载: {len(items)} 个文件 | MAX_CONN={NCHUNK}/文件 | 并行文件数={FILES_PARALLEL}",
+          flush=True)
+    threading.Thread(target=reporter, daemon=True).start()
+    with ThreadPoolExecutor(max_workers=FILES_PARALLEL) as ex:
+        results = list(ex.map(lambda it: dl(it[0], it[1], it[2]), items))
+    done[0] = True
+    failed = [items[i][1] for i, r in enumerate(results) if not r]
+    if failed:
+        print(f"\n{len(failed)} 个文件未完成（重跑可断点续传）:")
+        for dest in failed:
+            print("  -", os.path.basename(dest))
+        sys.exit(1)
+    print("\n全部下载完成。")
+
+
+if __name__ == "__main__":
+    main()
+PYEOF
+
+# --- 快路径：内置分片并行下载器（聚合 ~40MB/s） ---
+PY=""
+if command -v python3 >/dev/null 2>&1 && python3 -c "import requests" >/dev/null 2>&1; then
+  PY="python3"
+fi
+
 if [ -n "$PY" ]; then
   echo "… 分片并行下载（MAX_CONN=${MAX_CONN:-32}/文件 × FILES_PARALLEL=${FILES_PARALLEL:-2} 文件，实测聚合 ~40MB/s）"
-  if python3 "$SCRIPT_DIR/dl_models_fast.py" --manifest "$MANIFEST" --root "$MODELS_DIR"; then
+  if python3 "$PYTMP" --manifest "$MANIFEST" --root "$MODELS_DIR"; then
     echo ""
     echo "模型就绪清单："
     find "$MODELS_DIR/diffusion_models" "$MODELS_DIR/text_encoders" "$MODELS_DIR/vae" "$MODELS_DIR/loras" \

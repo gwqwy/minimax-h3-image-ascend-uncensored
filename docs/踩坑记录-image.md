@@ -85,6 +85,24 @@
 - 视频主服务启动参数里有 `--cache-classic`（H3 视频工作流同步用），0.45 副本不需要，
   语义也可能随版本变化。副本启动脚本不携带该参数。
 
+## 坑 8：启动脚本覆盖 PATH → triton-ascend 找不到 bisheng → comfy_kitchen 导入崩溃
+
+- **现象**：`python3 main.py` 在 `import comfy_kitchen` 阶段崩，
+  `RuntimeError: 0 active drivers ([]). There should only be one.`，
+  前置警告 `Couldn't find executable bisheng or TRITON_NPU_COMPILER_PATH`。
+- **根因链**：ComfyUI 0.45 的 `comfy/quant_ops.py` 在**导入时**加载 comfy_kitchen；
+  其 triton 后端 `quantization.py` 在模块级执行 `@triton.autotune` → 触发 triton
+  驱动初始化。机器上的 triton 是 CANNLab 镜像的 triton-ascend，初始化需要 CANN 的
+  bisheng 编译器（PATH 或 TRITON_NPU_COMPILER_PATH）。
+- **致命一步**：启动脚本 `export PATH="$VENV/bin:/usr/...:/bin"` **整段覆盖** PATH，
+  把 `set_env.sh` 刚注入的 CANN 编译器目录冲掉 → bisheng 不可见 → 0 驱动。
+  0.32 视频版启动脚本没覆盖 PATH，所以它不踩。
+- **解法**：改为 `export PATH="$VENV/bin:$PATH"` 前置；再加 bisheng 自动探测
+  （find CANN 目录）→ `TRITON_NPU_COMPILER_PATH` 兜底。
+- **Plan B**：bisheng 真不存在时，退回视频版验证过的旧版：
+  `venv045/bin/pip install 'comfy-kitchen==0.2.30'`（0.45.4 的 quant_ops API 兼容性
+  未验证，报 QuantizedTensor 相关错则换回新版）。
+
 ## 环境速查
 
 - CANN / torch_npu / Python 版本快照见 `docs/ENVIRONMENT-910B.txt`。

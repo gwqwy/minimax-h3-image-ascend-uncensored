@@ -49,8 +49,28 @@ echo "使用 NPU: $NPU_DEVICES"
 export HCCL_OP_EXPANSION_MODE="${HCCL_OP_EXPANSION_MODE:-AIV}"
 unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY all_proxy || true
 
-# --- venv 优先 ---
-export PATH="$VENV_DIR/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+# --- venv 优先（前置而非覆盖：必须保留 set_env.sh 注入的 CANN 编译器路径——
+#     triton-ascend 初始化时要找 bisheng 编译器，整段覆盖 PATH 会让 comfy_kitchen
+#     导入时 triton 无可用驱动 -> RuntimeError: 0 active drivers） ---
+export PATH="$VENV_DIR/bin:$PATH"
+
+# --- triton-ascend 编译器兜底：PATH 里找不到 bisheng 时显式指定 ---
+if ! command -v bisheng >/dev/null 2>&1; then
+    BISHENG=""
+    for r in "$ASCEND_HOME" "${ASCEND_HOME_PATH:-}" /usr/local/Ascend/ascend-toolkit; do
+        [ -n "$r" ] && [ -d "$r" ] || continue
+        BISHENG="$(find "$r" -maxdepth 4 -type f -name bisheng 2>/dev/null | head -1)"
+        [ -n "$BISHENG" ] && break
+    done
+    if [ -n "$BISHENG" ]; then
+        export TRITON_NPU_COMPILER_PATH="$BISHENG"
+        echo "triton-ascend 编译器: $BISHENG"
+    else
+        echo "!! 未找到 bisheng 编译器：comfy_kitchen 的 triton 后端可能初始化失败。"
+        echo "   若启动仍报 '0 active drivers'，可退回视频版验证过的旧版 comfy-kitchen："
+        echo "   /mnt/workspace/runtime/venv045/bin/pip install 'comfy-kitchen==0.2.30'"
+    fi
+fi
 
 # --- 显存模式 ---
 ARGS="--listen 0.0.0.0 --port $PORT --disable-auto-launch"
@@ -64,4 +84,6 @@ fi
 
 echo "$$" > "$PID_FILE"
 cd "$COMFY_HOME"
+echo "启动中（本终端前台阻塞属正常，Ctrl-C 停止服务；日志: tail -f $LOG_FILE）"
+echo "浏览器访问 http://<主机IP>:$PORT ；出图测试: bash scripts/test_t2i.sh"
 exec python3 main.py $ARGS >> "$LOG_FILE" 2>&1
