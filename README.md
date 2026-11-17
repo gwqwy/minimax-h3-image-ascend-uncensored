@@ -33,7 +33,7 @@
 - [重新部署（推倒重来）](#重新部署推倒重来)
 - [模型清单](#模型清单)
 - [两大兼容性坑与修复](#两大兼容性坑与修复)
-- [文生图工作流](#文生图工作流)
+- [工作流（文生图 / 图生视频 / 链式）](#工作流文生图--图生视频--链式)
 - [常见问题](#常见问题)
 
 ---
@@ -277,16 +277,19 @@ Turbo 加速 LoRA（可选，4/8 步出片，`WITH_LORA=1` 时下载）：`loras
 更多过程记录（venv 升级 torch 风险 / 软链坑 / hf-mirror 429 等）见
 [docs/踩坑记录-image.md](docs/踩坑记录-image.md)。
 
-## 文生图工作流
+## 工作流（文生图 / 图生视频 / 链式）
 
-`workflows/` 提供两份等价工作流：
+`workflows/` 提供四份文件（API 格式均可 `curl -X POST http://127.0.0.1:8188/prompt -d @...` 直用，
+模型文件名与本仓库下载脚本一一对应）：
 
-| 文件 | 形态 | 用法 |
-|---|---|---|
-| `image_minimax_h3_t2i.json` | UI 格式（官方模板，subgraph 封装） | 浏览器里 Workflows → Open 直接加载，改提示词点 Queue |
-| `minimax_h3_image_t2i_api.json` | API 格式（`/prompt` 直用） | `curl -X POST http://127.0.0.1:8188/prompt -d @...`，或用 `scripts/test_t2i.sh` |
+| 文件 | 链路 | 所需模型档 | 状态 |
+|---|---|---|---|
+| `image_minimax_h3_t2i.json` | 文生图（UI 模板，subgraph 封装） | image | ✅ 真机验证 |
+| `minimax_h3_image_t2i_api.json` | 文生图（API） | image | ✅ 真机验证（`scripts/test_t2i.sh` 即用此链） |
+| `minimax_h3_i2v_api.json` | 图生视频（API，首帧来自上传图片） | video | ⚠️ 未验证 |
+| `minimax_h3_t2i_i2v_api.json` | 文生图→图生视频一键链（API） | image + video | ⚠️ 未验证 |
 
-节点链（API 版）：
+文生图节点链（已验证）：
 
 ```
 UNETLoader(convrot DiT) ─┐
@@ -300,6 +303,36 @@ ConditioningZeroOut ── negative ──────────────�
 
 > `MiniMaxH3ImageConditioning` 是**双输出节点**（CONDITIONING + 内置 LATENT），
 > 官方调优区域为 2048×2048（4MP）；自定义尺寸要求宽×高在 0.65MP~20MP、宽高比 ≤3:1、边长 16 的倍数。
+
+图生视频节点链（对照 ComfyUI 官方模板 `video_minimax_h3_i2v.json` 编写）：
+
+```
+LoadImage ── ImageScaleToTotalPixels(0.9MP) ─┐
+UNETLoader(fl2va DiT) ───────────────────────┤
+CLIPLoader(官方TE, minimax) ── MiniMaxH3ImageToVideo ──┬─ positive ─┐
+VAELoader(视频VAE) ──────────────────────────┘         └─ latent ──┤
+ConditioningZeroOut ── negative ────────────────────────────────────┤
+                    KSampler(20步, res_multistep/simple, cfg=1) ────┘
+                          ↓                  ↓
+                   VAEDecode(视频VAE)   VAEDecodeAudio(音频VAE)
+                          └── CreateVideo(fps=24) ── SaveVideo
+```
+
+链式工作流（`minimax_h3_t2i_i2v_api.json`）：文生图直接在 **1344×768** 出图
+（与视频输出同分辨率，免缩放节点），其 `VAEDecode` 结果直接作为
+`MiniMaxH3ImageToVideo.first_frame`；两颗 DiT **共享同一个 CLIPLoader**（25GB 的
+TE 只加载一次，这是链式方案的关键省资源点）。
+
+视频口径速查：
+
+- 官方 768p = **1344×768**（约 1MP 短边 768），**24fps**；时长→帧数需满足
+  `length ≡ 5 (mod 17)`（5 秒 → 124 帧，即工作流默认值）
+- 官方非 Turbo 采样：**20 步** / `res_multistep` / `simple` / cfg 1.0；装了 Turbo LoRA
+  可降到 8 步（加 `LoraLoaderModelOnly`，LoRA 文件见 `WITH_LORA=1` 下载档）
+- 音频与画面共用同一 latent：视频 VAE `VAEDecode` 出画面、音频 VAE `VAEDecodeAudio`
+  出声轨，`CreateVideo` 合成后交给 `SaveVideo`（mp4，format auto）
+- ⚠️ 视频链路在 v0.45.4 + 昇腾上**未验证**（模型可先行就位）；图生视频的首帧图请放
+  `ComfyUI/input/` 目录（或改 `LoadImage` 的 `image` 字段）
 
 ## 常见问题
 

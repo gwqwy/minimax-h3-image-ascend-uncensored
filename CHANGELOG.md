@@ -61,6 +61,13 @@
 - **修复 venv 依赖过滤误伤 torchsde**（踩坑记录坑 4 补充）：`^torch` 前缀 grep 把
   独立包 torchsde 一起滤掉（真机复现 `No module named 'torchsde'`），改为精确排除
   torch/torchvision/torchaudio 三件套
+- **新增工作流两份**（节点接线对照官方模板 `video_minimax_h3_i2v.json`）：
+  - `workflows/minimax_h3_i2v_api.json`：图生视频——LoadImage 首帧 →
+    MiniMaxH3ImageToVideo（自带 LATENT）→ KSampler（20 步 res_multistep/simple，
+    cfg=1）→ 视频/音频双 VAEDecode → CreateVideo(fps=24) → SaveVideo
+  - `workflows/minimax_h3_t2i_i2v_api.json`：文生图→图生视频一键链——t2i 在 1344×768
+    出图直接作首帧，两颗 DiT 共享同一 CLIPLoader（TE 只加载一次）
+  - 两份均 ⚠️ 未验证（视频链路）；文生图两张既有文件不动（已验证）
 - **未验证项（升级先行，真机复验待做）**：
   - 统一部署脚本本身（升级/备份/回滚路径）未在 910B 真机复验
   - 0.32 昇腾视频适配补丁（comfy-ui-changes.patch）与 Turbo 采样节点在 v0.45.4 下的
