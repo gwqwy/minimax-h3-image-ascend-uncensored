@@ -56,6 +56,11 @@
 - **修复启动脚本覆盖 PATH 导致 comfy_kitchen 导入崩溃**（踩坑记录坑 8）：PATH 改前置
   保留 CANN 编译器目录 + bisheng 自动探测注入 `TRITON_NPU_COMPILER_PATH`；
   `start_comfyui.sh` 启动前打印日志位置与测试指引
+  （真机复验：修复后 comfy_kitchen 正常导入，且 comfy-kitchen 0.2.41 自带
+  **Ascend 原生后端**，INT8/convrot 算子走 NPU 原生实现）
+- **修复 venv 依赖过滤误伤 torchsde**（踩坑记录坑 4 补充）：`^torch` 前缀 grep 把
+  独立包 torchsde 一起滤掉（真机复现 `No module named 'torchsde'`），改为精确排除
+  torch/torchvision/torchaudio 三件套
 - **未验证项（升级先行，真机复验待做）**：
   - 统一部署脚本本身（升级/备份/回滚路径）未在 910B 真机复验
   - 0.32 昇腾视频适配补丁（comfy-ui-changes.patch）与 Turbo 采样节点在 v0.45.4 下的

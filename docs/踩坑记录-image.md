@@ -65,6 +65,11 @@
   会尝试升级 torch → **torch_npu 与 torch 版本强绑定**，升级后 CANN 初始化直接失败。
 - **解法**：`grep -viE '^torch' requirements.txt | pip install -r /dev/stdin`，
   torch/torch_npu 一律走系统环境（`--system-site-packages`）。
+- **补充（2026-11-18 真机复现）**：`^torch` 前缀过滤**误伤 torchsde**——它是独立正经包
+  （k_diffusion 采样必需），被滤掉后启动报
+  `ModuleNotFoundError: No module named 'torchsde'`。过滤条件必须精确匹配包名：
+  `grep -viE '^(torch|torchvision|torchaudio)(=|<|>|!|~| |$)'`。
+  （0.32 视频服务当年没炸只是因为它的环境另有 torchsde 来源，不是过滤器没错。）
 
 ## 坑 5：models 软链的幂等性
 

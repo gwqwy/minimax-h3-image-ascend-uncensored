@@ -92,8 +92,10 @@ if [ ! -x "$VENV_DIR/bin/python" ]; then
   echo "… 创建 venv: $VENV_DIR"
   python3 -m venv --system-site-packages "$VENV_DIR"
 fi
-echo "… 安装 ComfyUI $PIN 依赖（已过滤 torch/torchvision/torchaudio）"
-grep -viE '^torch' "$MAIN_DIR/requirements.txt" | "$VENV_DIR/bin/pip" install -q -r /dev/stdin
+echo "… 安装 ComfyUI $PIN 依赖（已精确排除 torch/torchvision/torchaudio 三件套）"
+# 只精确排除与 CANN/torch_npu 强绑定的三件，绝不能 pip 升级它们；
+# 不能用 '^torch' 模糊前缀——会把 torchsde 等正经独立包误杀（踩坑记录坑 4 补充）
+grep -viE '^(torch|torchvision|torchaudio)(=|<|>|!|~| |$)' "$MAIN_DIR/requirements.txt" | "$VENV_DIR/bin/pip" install -q -r /dev/stdin
 
 # --- 3. 兼容性修复：cast_weight device 守卫 ---
 # torch_npu 劫持 nn.Module.to()：权重搬运时会以 (device) 调用模块的 cast_weight 钩子，
