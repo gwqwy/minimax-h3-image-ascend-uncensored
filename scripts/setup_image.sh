@@ -109,7 +109,11 @@ else
   echo "✓ cast_weight 守卫补丁已存在"
 fi
 
-# --- 4. 旧双服务遗留提示 ---
+# --- 4. 工作流安装到用户目录（浏览器「工作流」面板可见） ---
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+bash "$SCRIPT_DIR/install_workflows.sh" || echo "! 工作流安装跳过（不影响部署）"
+
+# --- 5. 旧双服务遗留提示 ---
 if [ -d "$REPLICA_DIR" ]; then
   echo ""
   echo "! 检测到旧双服务方案副本: $REPLICA_DIR（统一方案不再需要）"

@@ -334,6 +334,17 @@ TE 只加载一次，这是链式方案的关键省资源点）。
 - ⚠️ 视频链路在 v0.45.4 + 昇腾上**未验证**（模型可先行就位）；图生视频的首帧图请放
   `ComfyUI/input/` 目录（或改 `LoadImage` 的 `image` 字段）
 
+浏览器里看到工作流：仓库 `workflows/` 目录**不会**自动出现在 ComfyUI 左侧「工作流」
+面板（那里读的是服务端 `ComfyUI/user/default/workflows/`）。三种加载方式任选：
+
+```bash
+bash scripts/install_workflows.sh   # ① 安装到用户目录（setup_image.sh 末步会自动执行）
+```
+
+② 浏览器 Workflows → Open 里选 `user/default/workflows/minimax-h3/` 下的文件；
+③ 把 JSON 文件从本地电脑**直接拖进浏览器画布**也能加载（API 格式同样支持）。
+API 格式（`*_api.json`）本质是给 `/prompt` 接口用的，浏览器打开后会自动展开成节点图。
+
 ## 常见问题
 
 **Q：为什么从 "副本共存" 改成统一升级？**
