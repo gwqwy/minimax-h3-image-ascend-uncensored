@@ -28,7 +28,7 @@
 
 - [这是什么](#这是什么)
 - [实测环境与结果](#实测环境与结果)
-- [快速开始（三步）](#快速开始三步)
+- [全新主机部署（三步）](#全新主机部署三步)
 - [从 0.32 双服务升级（迁移说明）](#从-032-双服务升级迁移说明)
 - [模型清单](#模型清单)
 - [两大兼容性坑与修复](#两大兼容性坑与修复)
@@ -66,14 +66,35 @@ NVIDIA 路线——本仓库把这套东西搬上昇腾：
 | 出图速度 | 6 步采样，2048×1152 秒级出片（首次运行含权重加载，之后热机更快） |
 | 下载 | hf-mirror 直连，实测 ~20MB/s，46GB 约 40 分钟 |
 
-## 快速开始（三步）
+## 全新主机部署（三步）
+
+### 前提自查（缺一不可）
+
+CANNLab / 昇腾官方镜像一般开箱即满足；自备主机先跑一遍下面的自查命令：
+
+| 项 | 要求 | 自查命令 |
+|---|---|---|
+| 硬件 | 昇腾 NPU（910B 实测；910B3 / 910C 理论可行，未验证） | `ls /dev/davinci*` 能看到设备 |
+| CANN | ascend-toolkit 已安装（含 `set_env.sh`） | `ls /usr/local/Ascend/ascend-toolkit/set_env.sh ~/Ascend/ascend-toolkit/set_env.sh` 二者有其一 |
+| torch / torch_npu | **系统** Python 已装且与 CANN 版本匹配（脚本全程不动它们） | `python3 -c "import torch, torch_npu"` 无报错 |
+| 磁盘 | 模型 46GB + 权重加载缓存，建议 ≥100GB 空闲 | `df -h /mnt/workspace` |
+| 工具 | git / curl / python3 ≥ 3.10 | `git --version && curl --version && python3 -V` |
+
+> CANN 与 torch_npu 的安装不在本仓库范围内，参考华为 Ascend 官方
+> [CANN 安装指南](https://www.hiascend.com/document)装好后重跑自查。
+> 实测环境快照（CANN 9.0.0 / torch 2.7.1 / torch_npu 2.7.1.post4 / Python 3.11）见
+> [docs/ENVIRONMENT-910B.txt](docs/ENVIRONMENT-910B.txt)。
+
+### 三步部署
 
 ```bash
-# ① 升级/部署 ComfyUI v0.45.4 统一服务（自动备份本地改动、建 venv、打兼容性补丁）
-bash setup.sh --skip-models        # 或 bash scripts/setup_image.sh
+# ① 取本仓库
+git clone https://github.com/gwqwy/minimax-h3-image-ascend-uncensored.git
+cd minimax-h3-image-ascend-uncensored
 
-# ② 下载模型（文生图 46GB；全家桶 91GB；支持断点续传）
-bash scripts/download_models_image.sh image
+# ② 一键部署 + 下载文生图模型
+#    （ComfyUI 直拉 v0.45.4 + 独立 venv + 兼容性补丁 + 46GB 官方权重，断点续传）
+bash setup.sh                    # 模型已就位时: bash setup.sh --skip-models
 
 # ③ 启动 + 一键文生图
 bash scripts/start_comfyui.sh
@@ -83,8 +104,23 @@ bash scripts/test_t2i.sh
 看到 `DONE /h3image_t2i_00001_.png` 即为成功；产物在主目录 `output/`。
 浏览器访问 `http://<机器IP>:8188` 也可手动操作（左侧队列历史可查历史出图）。
 
-> 还没有 ComfyUI？`setup_image.sh` 会**直接浅克隆 v0.45.4**（`git clone --depth 1 --branch v0.45.4`，
-> `--branch` 支持 tag，无需先拉默认分支再 checkout）；已有 0.32 旧仓的机器走备份升级流程。
+### 默认路径与可调项
+
+| 项 | 默认值 | 覆盖方式 |
+|---|---|---|
+| 工作区根 | `/mnt/workspace`（ComfyUI 装在 `$COMFY_BASE/ComfyUI`） | `COMFY_BASE=/your/path bash setup.sh` |
+| venv | `$COMFY_BASE/runtime/venv045`（复用系统 torch_npu） | `COMFY_VENV=... bash setup.sh` |
+| 服务端口 | `8188` | `COMFYUI_PORT=8090 bash scripts/start_comfyui.sh` |
+| NPU 卡 | 自动识别全部 | `NPU_DEVICES=0,1 bash scripts/start_comfyui.sh` |
+| 模型目录 | `$COMFY_BASE/ComfyUI/models` | `COMFY_MODELS=... bash scripts/download_models_image.sh` |
+
+> **ComfyUI 不需要单独装**：`setup_image.sh` 在目标机器无 ComfyUI 时会
+> `git clone --depth 1 --branch v0.45.4` **直接拉取 v0.45.4**（`--branch` 支持 tag，
+> 一步到位）；已有 0.32 旧仓的机器则自动走备份升级流程，见下节。
+> 视频模型（全家桶/低配档/Turbo LoRA/无审查 TE）在[模型清单](#模型清单)按需追加下载。
+>
+> 首次出图前要加载约 45GB 权重，耐心等 `test_t2i.sh` 轮询（约 15 分钟上限）；
+> 之后热机秒级出片。下载或出图报错先看 [docs/踩坑记录-image.md](docs/踩坑记录-image.md)。
 
 ## 从 0.32 双服务升级（迁移说明）
 
@@ -268,15 +304,24 @@ both text-to-image (verified) and video models (download supported, pipeline on 
 
 Three steps:
 
+Prerequisites: an Ascend NPU host (910B tested) with CANN toolkit plus a system-wide
+torch/torch_npu matching it (the scripts never touch torch), ≥100GB free disk, git/curl/python≥3.10.
+See the Chinese "全新主机部署" section above for one-line self-checks and the full walkthrough.
+
 ```bash
-bash scripts/setup_image.sh                 # upgrade/deploy unified v0.45.4 + venv + compat patches
-                                            # (fresh machines clone v0.45.4 directly via `git clone --branch`)
-bash scripts/download_models_image.sh image # 46GB official Comfy-Org weights (resumable)
-                                            # scopes: image / video / all, plus LOWVRAM=1, WITH_LORA=1,
-                                            # WITH_HERETIC_TE=1 (uncensored TE, 0.45 compatibility unverified)
+git clone https://github.com/gwqwy/minimax-h3-image-ascend-uncensored.git
+cd minimax-h3-image-ascend-uncensored
+
+bash setup.sh                               # deploy + download in one shot: clones ComfyUI v0.45.4
+                                            # directly (--branch tag clone), builds a venv that reuses the
+                                            # system torch_npu, patches comfy/ops.py, fetches 46GB of weights
 bash scripts/start_comfyui.sh               # single service on port 8188
 bash scripts/test_t2i.sh                    # one-shot text-to-image smoke test
 ```
+
+Extra model scopes (resumable): `download_models_image.sh image|video|all`, plus
+`LOWVRAM=1` (pruned fl2va), `WITH_LORA=1` (Turbo LoRAs), `WITH_HERETIC_TE=1`
+(uncensored TE — 0.45 compatibility unverified).
 
 Two Ascend-specific pitfalls are documented and auto-patched: text-encoder weights must be
 the official Comfy-Org build (layer_conf JSON compatibility), and a `cast_weight` device
