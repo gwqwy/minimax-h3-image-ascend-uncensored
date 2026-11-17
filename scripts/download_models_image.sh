@@ -173,7 +173,7 @@ done
 
 if [ -n "$PY" ]; then
   echo "… 分片并行下载（MAX_CONN=${MAX_CONN:-32}/文件 × FILES_PARALLEL=${FILES_PARALLEL:-2} 文件，实测聚合 ~40MB/s）"
-  if python3 "$SCRIPT_DIR/dl_models_fast.py" --manifest "$MANIFEST"; then
+  if python3 "$SCRIPT_DIR/dl_models_fast.py" --manifest "$MANIFEST" --root "$MODELS_DIR"; then
     echo ""
     echo "模型就绪清单："
     find "$MODELS_DIR/diffusion_models" "$MODELS_DIR/text_encoders" "$MODELS_DIR/vae" "$MODELS_DIR/loras" \

@@ -12,6 +12,8 @@
 # - 幂等：重复执行安全
 #
 # 环境变量: COMFY_BASE(默认 /mnt/workspace)  COMFY_VENV(默认 $COMFY_BASE/runtime/venv045)
+#           REDEPLOY=1 推倒重来：旧主目录整体挪走留档，全新克隆 v0.45.4
+#           （models/output/user 自动迁回；custom_nodes 不迁回，0.32 时代插件与 0.45 不兼容）
 set -euo pipefail
 
 BASE="${COMFY_BASE:-/mnt/workspace}"
@@ -19,7 +21,40 @@ MAIN_DIR="$BASE/ComfyUI"
 VENV_DIR="${COMFY_VENV:-$BASE/runtime/venv045}"
 RUNTIME="$BASE/runtime"
 PIN="v0.45.4"
+REDEPLOY="${REDEPLOY:-0}"
 REPLICA_DIR="$BASE/ComfyUI-045"   # 旧双服务方案的副本目录，如存在仅提示清理
+
+# --- R. 重新部署模式：旧目录挪走留档，全新克隆（模型不重下） ---
+if [ "$REDEPLOY" = "1" ] && [ -d "$MAIN_DIR" ]; then
+  echo "… REDEPLOY=1：停旧服务并挪走旧主目录"
+  for pf in "$RUNTIME"/comfyui-*.pid; do
+    [ -s "$pf" ] || continue
+    old=$(cat "$pf")
+    if kill -0 "$old" 2>/dev/null; then
+      kill "$old"
+      echo "  已停止旧服务 PID=$old（$pf）"
+    fi
+  done
+  OLD_DIR="$BASE/ComfyUI-old-$(date +%Y%m%d-%H%M%S)"
+  mv "$MAIN_DIR" "$OLD_DIR"
+  echo "✓ 旧主目录已整体留档: $OLD_DIR（验证通过后可整目录删除回收空间）"
+  git clone --depth 1 --branch "$PIN" https://github.com/comfyanonymous/ComfyUI.git "$MAIN_DIR"
+  echo "✓ 全新克隆 $PIN 完成"
+  # 数据迁回（同名冲突时退化为合并拷贝，绝不覆盖新克隆）
+  for d in models output user; do
+    if [ -d "$OLD_DIR/$d" ] && [ ! -e "$MAIN_DIR/$d" ]; then
+      mv "$OLD_DIR/$d" "$MAIN_DIR/$d"
+      echo "✓ $d/ 已迁回"
+    elif [ -d "$OLD_DIR/$d" ]; then
+      cp -a "$OLD_DIR/$d/." "$MAIN_DIR/$d/"
+      echo "✓ $d/ 已合并拷回（目标已存在同名目录）"
+    fi
+  done
+  echo "  custom_nodes 未迁回（0.32 时代插件）；确需某个插件请从 $OLD_DIR/custom_nodes 手动挑选"
+  if [ -d "$REPLICA_DIR" ]; then
+    echo "! 旧双服务副本 $REPLICA_DIR 已随主仓库失效，验证后可直接删除: rm -rf \"$REPLICA_DIR\""
+  fi
+fi
 
 # --- 0. 主仓库（没有就直接浅克隆 v0.45.4；--branch 支持 tag，无需先拉默认分支再 checkout。
 #         已有 0.32 旧仓的机器不走这里，由下方第 1 步的备份升级流程处理） ---

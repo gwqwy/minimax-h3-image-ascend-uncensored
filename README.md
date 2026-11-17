@@ -30,6 +30,7 @@
 - [实测环境与结果](#实测环境与结果)
 - [全新主机部署（三步）](#全新主机部署三步)
 - [从 0.32 双服务升级（迁移说明）](#从-032-双服务升级迁移说明)
+- [重新部署（推倒重来）](#重新部署推倒重来)
 - [模型清单](#模型清单)
 - [两大兼容性坑与修复](#两大兼容性坑与修复)
 - [文生图工作流](#文生图工作流)
@@ -159,6 +160,36 @@ bash scripts/test_t2i.sh
   视频链路在 v0.45.4 下未验证（模型可先下载）。需要 0.32 口径视频服务时，用姊妹仓库
   [minimax-h3-ascend-uncensored](https://gitcode.com/sazhihou/minimax-h3-ascend-uncensored)
   或按升级备份回滚。
+
+## 重新部署（推倒重来）
+
+老目录状态太乱（0.32 残留插件、改坏的本地改动、莫名的启动问题）不想原地升级？
+`REDEPLOY=1` 一条命令推倒重来，**模型不会重新下载**：
+
+```bash
+REDEPLOY=1 bash setup.sh --skip-models
+```
+
+脚本会依次：
+
+1. 停掉所有在跑的 ComfyUI 服务（读 PID 文件）
+2. 旧主目录**整体挪走留档**为 `/mnt/workspace/ComfyUI-old-<时间戳>`（同盘改名，瞬间完成）
+3. 全新克隆 ComfyUI v0.45.4 到 `/mnt/workspace/ComfyUI`
+4. **`models/`、`output/`、`user/`（自存工作流）自动迁回**新目录；`custom_nodes` **不迁回**
+   （0.32 时代插件与 0.45 不兼容，确需某个插件从留档目录手动挑）
+5. 建/复用 venv → 装依赖（过滤 torch 系）→ 打 cast_weight 兼容补丁
+
+收尾：
+
+```bash
+bash scripts/start_comfyui.sh && bash scripts/test_t2i.sh   # 验证
+# 验证通过后回收空间（旧目录 + 旧双服务副本）：
+rm -rf /mnt/workspace/ComfyUI-old-<时间戳>
+rm -rf /mnt/workspace/ComfyUI-045   # 若存在（旧 worktree 副本）
+```
+
+> 想连 venv 也全新：`REDEPLOY=1 COMFY_VENV=/mnt/workspace/runtime/venv045-new bash setup.sh --skip-models`，
+> 验证通过后把启动脚本的 `COMFY_VENV` 指到新路径再删旧 venv。
 
 ## 模型清单
 
