@@ -37,6 +37,10 @@
   同名旧档冲突），工作流里 `clip_name` 带子目录前缀。
 - **原理**：convrot 是量化格式，量化配置以 JSON 内嵌在权重里；不同批次/渠道的档可能
   结构有差异，官方加载器只认官方档。
+- **补充教训（2026-11-17）**：`official/` 只是**本地隔离目录**，Comfy-Org/MiniMax-H3-Image
+  仓内并没有这个路径（HF API 实证）——下载 URL 必须用仓内真实路径
+  `text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors`，带了 `official/` 只会
+  404 拿到错误页（会被大小校验拦下，但文件永远下不下来）。脚本已把仓内路径与本地路径分离。
 
 ## 坑 3：torch_npu 劫持 `.to()` → cast_weight(device) → AttributeError
 

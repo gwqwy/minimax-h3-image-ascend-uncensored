@@ -29,6 +29,19 @@
   - 无审查 heretic TE（ethanfel 仓，26.4GB）：地址保留，但本仓库**默认改为不下载**
     （`WITH_HERETIC_TE=1` 开启）——非官方渠道 convrot 档，layer_conf 与 0.45 官方加载器
     兼容性未验证（大概率踩坑 ①）；0.32 口径视频服务可继续使用
+- **全新主机部署流程默认包含图生视频模型下载**：README 三步法第 ② 步在
+  `setup.sh`（部署 + 文生图 46GB）后紧跟 `download_models_image.sh video`
+  （图生视频 62GB），合计约 108GB，磁盘前提同步上调至 ≥150GB
+- **移植视频版分片并行下载器** `scripts/dl_models_fast.py`（引擎来自视频版仓库
+  `dl_models.py` 真机实测：32 连接/文件 × 2 文件并行，聚合 ~40MB/s；分片级断点续传
+  `.p<offset>`；精确大小校验 + 预期字节数防限流错误页；仅允许 `https://hf-mirror.com` 源）。
+  `download_models_image.sh` 默认走它，无 python3/requests 时自动回退单连接 curl；
+  `MAX_CONN` / `FILES_PARALLEL` 可调并发
+- **修复官方 TE 下载 URL**：Comfy-Org/MiniMax-H3-Image 仓内**不存在** `text_encoders/official/`
+  路径（API 实证），`official/` 只是本地隔离目录、不应出现在 URL 里——原 URL 会 404 拿到
+  错误页。现脚本仓内路径与本地路径分离（`add <仓库> <仓内路径> <本地路径> <字节>`），
+  下载 URL 改用仓内真实路径 `text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors`
+- 下载脚本新增启动提醒横幅（档位/文件数/总量/磁盘余量检查）
 - **未验证项（升级先行，真机复验待做）**：
   - 统一部署脚本本身（升级/备份/回滚路径）未在 910B 真机复验
   - 0.32 昇腾视频适配补丁（comfy-ui-changes.patch）与 Turbo 采样节点在 v0.45.4 下的

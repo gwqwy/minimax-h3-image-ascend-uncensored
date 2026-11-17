@@ -77,7 +77,7 @@ CANNLab / 昇腾官方镜像一般开箱即满足；自备主机先跑一遍下�
 | 硬件 | 昇腾 NPU（910B 实测；910B3 / 910C 理论可行，未验证） | `ls /dev/davinci*` 能看到设备 |
 | CANN | ascend-toolkit 已安装（含 `set_env.sh`） | `ls /usr/local/Ascend/ascend-toolkit/set_env.sh ~/Ascend/ascend-toolkit/set_env.sh` 二者有其一 |
 | torch / torch_npu | **系统** Python 已装且与 CANN 版本匹配（脚本全程不动它们） | `python3 -c "import torch, torch_npu"` 无报错 |
-| 磁盘 | 模型 46GB + 权重加载缓存，建议 ≥100GB 空闲 | `df -h /mnt/workspace` |
+| 磁盘 | 模型下载：文生图 46GB，含图生视频全家桶约 108GB；建议 ≥150GB 空闲 | `df -h /mnt/workspace` |
 | 工具 | git / curl / python3 ≥ 3.10 | `git --version && curl --version && python3 -V` |
 
 > CANN 与 torch_npu 的安装不在本仓库范围内，参考华为 Ascend 官方
@@ -87,14 +87,29 @@ CANNLab / 昇腾官方镜像一般开箱即满足；自备主机先跑一遍下�
 
 ### 三步部署
 
+> **⚠️ 下载量提醒（开跑前必读）**
+> 第 ② 步合计下载约 **108GB**（文生图 46GB + 图生视频 62GB）：
+> - **耗时预期**：默认用**分片并行下载器**（视频版同款引擎，32 连接/文件 × 2 文件并行）实测聚合 **~40MB/s，全家桶约 45 分钟**；环境缺 python3/requests 时自动回退单连接 curl（~20MB/s，约 1.5~2 小时）
+> - **高峰期可能 429 限流**：稍等重跑即可，**断点续传**不会从头再来
+> - **先确认磁盘**：`df -h /mnt/workspace` 余量 ≥ 150GB（脚本启动时也会自动检查并警告）
+> - **建议放 `tmux`/`screen` 里跑**：SSH 断线、合盖都不中断
+> - **只想先出图？** 跳过 `download_models_image.sh video` 那条命令，46GB 约 20 分钟即可开跑文生图；视频模型随时补下
+> - 并发可调：`MAX_CONN=48`（每文件连接数）/ `FILES_PARALLEL=3`（并行文件数）
+
 ```bash
 # ① 取本仓库
 git clone https://github.com/gwqwy/minimax-h3-image-ascend-uncensored.git
 cd minimax-h3-image-ascend-uncensored
 
-# ② 一键部署 + 下载文生图模型
-#    （ComfyUI 直拉 v0.45.4 + 独立 venv + 兼容性补丁 + 46GB 官方权重，断点续传）
+# ② 一键部署 + 下载模型（断点续传）
+#    部署：ComfyUI 直拉 v0.45.4 + 独立 venv + 兼容性补丁 + 文生图三件套（46GB）
 bash setup.sh                    # 模型已就位时: bash setup.sh --skip-models
+#    图生视频模型（Comfy-Org/MiniMax-H3 全家桶 62GB：fl2va 完整版/ref2va + 视频/音频 VAE）
+bash scripts/download_models_image.sh video
+#    可选档位：
+#      LOWVRAM=1 bash scripts/download_models_image.sh video   # 低配档：pruned fl2va 21GB（32GB 卡）
+#      WITH_LORA=1 ... video                                    # 追加 Turbo 加速 LoRA（+5.5GB）
+#      WITH_HERETIC_TE=1 bash scripts/download_models_image.sh all   # 追加无审查 TE（+26.4GB，0.45 兼容性未验证）
 
 # ③ 启动 + 一键文生图
 bash scripts/start_comfyui.sh
@@ -117,7 +132,9 @@ bash scripts/test_t2i.sh
 > **ComfyUI 不需要单独装**：`setup_image.sh` 在目标机器无 ComfyUI 时会
 > `git clone --depth 1 --branch v0.45.4` **直接拉取 v0.45.4**（`--branch` 支持 tag，
 > 一步到位）；已有 0.32 旧仓的机器则自动走备份升级流程，见下节。
-> 视频模型（全家桶/低配档/Turbo LoRA/无审查 TE）在[模型清单](#模型清单)按需追加下载。
+> 图生视频模型已含在第 ② 步（两条下载命令都可单独重跑，断点续传；视频模型的官方 TE
+> 与文生图共用同一份，第 ② 步 `setup.sh` 已先就位）；
+> ⚠️ 视频链路在 v0.45.4 下**未验证**，模型先行就位，更多可选档位见[模型清单](#模型清单)。
 >
 > 首次出图前要加载约 45GB 权重，耐心等 `test_t2i.sh` 轮询（约 15 分钟上限）；
 > 之后热机秒级出片。下载或出图报错先看 [docs/踩坑记录-image.md](docs/踩坑记录-image.md)。
@@ -146,8 +163,9 @@ bash scripts/test_t2i.sh
 ## 模型清单
 
 下载地址与视频版仓库（[sazhihou/minimax-h3-ascend-uncensored](https://gitcode.com/sazhihou/minimax-h3-ascend-uncensored)
-的 `scripts/dl_models.py`）保持一致；官方档来自 Comfy-Org 重打包版
-（文生图 [H3-Image](https://huggingface.co/Comfy-Org/MiniMax-H3-Image)，
+的 `scripts/dl_models.py`）保持一致，下载引擎也移植自它（`scripts/dl_models_fast.py`，
+分片并行实测聚合 ~40MB/s；`MAX_CONN` / `FILES_PARALLEL` 可调并发）。官方档来自 Comfy-Org
+重打包版（文生图 [H3-Image](https://huggingface.co/Comfy-Org/MiniMax-H3-Image)，
 图生视频 [H3](https://huggingface.co/Comfy-Org/MiniMax-H3)），脚本默认走
 [hf-mirror.com](https://hf-mirror.com) 国内直连。下载档位：
 
@@ -312,16 +330,26 @@ See the Chinese "全新主机部署" section above for one-line self-checks and 
 git clone https://github.com/gwqwy/minimax-h3-image-ascend-uncensored.git
 cd minimax-h3-image-ascend-uncensored
 
-bash setup.sh                               # deploy + download in one shot: clones ComfyUI v0.45.4
+bash setup.sh                               # deploy + t2i weights (46GB): clones ComfyUI v0.45.4
                                             # directly (--branch tag clone), builds a venv that reuses the
-                                            # system torch_npu, patches comfy/ops.py, fetches 46GB of weights
+                                            # system torch_npu, patches comfy/ops.py
+bash scripts/download_models_image.sh video # i2v models (62GB): fl2va/ref2va + video/audio VAEs
+                                            # (LOWVRAM=1 pruned fl2va; WITH_LORA=1 Turbo LoRAs; WITH_HERETIC_TE=1
+                                            #  uncensored TE — 0.45 compatibility unverified)
+
 bash scripts/start_comfyui.sh               # single service on port 8188
 bash scripts/test_t2i.sh                    # one-shot text-to-image smoke test
 ```
 
-Extra model scopes (resumable): `download_models_image.sh image|video|all`, plus
-`LOWVRAM=1` (pruned fl2va), `WITH_LORA=1` (Turbo LoRAs), `WITH_HERETIC_TE=1`
-(uncensored TE — 0.45 compatibility unverified).
+Heads-up: the two download commands fetch ~108GB total (46GB t2i + 62GB i2v). The default
+downloader is a sharded parallel engine (ported from the video repo, 32 connections/file ×
+2 files) measuring **~40MB/s aggregate — full bundle in ~45min**; without python3+requests it
+falls back to single-connection curl (~20MB/s, 1.5–2h). Run inside `tmux`/`screen`; on 429
+rate-limit pauses just re-run (resumable). T2I-only? Skip the `video` line and you're up in
+~20min. Tunables: `MAX_CONN`, `FILES_PARALLEL`. The script prints a per-run summary
+(scope, total GB, free-disk check) at startup.
+
+All downloads are resumable; other scopes: `download_models_image.sh image|video|all`.
 
 Two Ascend-specific pitfalls are documented and auto-patched: text-encoder weights must be
 the official Comfy-Org build (layer_conf JSON compatibility), and a `cast_weight` device
