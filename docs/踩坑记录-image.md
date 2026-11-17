@@ -99,9 +99,13 @@
   0.32 视频版启动脚本没覆盖 PATH，所以它不踩。
 - **解法**：改为 `export PATH="$VENV/bin:$PATH"` 前置；再加 bisheng 自动探测
   （find CANN 目录）→ `TRITON_NPU_COMPILER_PATH` 兜底。
-- **Plan B**：bisheng 真不存在时，退回视频版验证过的旧版：
-  `venv045/bin/pip install 'comfy-kitchen==0.2.30'`（0.45.4 的 quant_ops API 兼容性
-  未验证，报 QuantizedTensor 相关错则换回新版）。
+- **真机复验（2026-11-18）**：PATH 前置后 `0 active drivers` 消失，comfy_kitchen 正常
+  导入，eager 后端可用（capabilities 含全部 convrot/int8 算子），triton 后端优雅降级。
+- **二次坑（版本反向降级）**：排查期间把 comfy-kitchen 降到 0.32 时代的 0.2.30，换来
+  `ModuleNotFoundError: comfy_kitchen.int8_decode`——ComfyUI v0.45.4 在 requirements.txt
+  里**精确 pin `comfy-kitchen==0.2.41`**（comfy-aimdo==0.6.0）。教训：**不要手动降级
+  comfy 系依赖**，版本不对时用 requirements 重装对齐：
+  `grep -viE '^torch' requirements.txt | pip install -r /dev/stdin`
 
 ## 环境速查
 
