@@ -66,9 +66,10 @@ if ! command -v bisheng >/dev/null 2>&1; then
         export TRITON_NPU_COMPILER_PATH="$BISHENG"
         echo "triton-ascend 编译器: $BISHENG"
     else
-        echo "!! 未找到 bisheng 编译器：comfy_kitchen 的 triton 后端可能初始化失败。"
-        echo "   若启动仍报 '0 active drivers'，可退回视频版验证过的旧版 comfy-kitchen："
-        echo "   /mnt/workspace/runtime/venv045/bin/pip install 'comfy-kitchen==0.2.30'"
+        echo "!! 未找到 bisheng 编译器：triton-ascend 可能无法初始化。"
+        echo "   comfy_kitchen 通常会优雅降级到 eager 后端，可继续启动；若报"
+        echo "   '0 active drivers' 或 ModuleNotFoundError: comfy_kitchen.*，重装依赖对齐版本："
+        echo "   grep -viE '^torch' $COMFY_HOME/requirements.txt | $VENV_DIR/bin/pip install -r /dev/stdin"
     fi
 fi
 
