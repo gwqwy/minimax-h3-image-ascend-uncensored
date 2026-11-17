@@ -61,13 +61,39 @@
 - **修复 venv 依赖过滤误伤 torchsde**（踩坑记录坑 4 补充）：`^torch` 前缀 grep 把
   独立包 torchsde 一起滤掉（真机复现 `No module named 'torchsde'`），改为精确排除
   torch/torchvision/torchaudio 三件套
-- **新增工作流两份**（节点接线对照官方模板 `video_minimax_h3_i2v.json`）：
-  - `workflows/minimax_h3_i2v_api.json`：图生视频——LoadImage 首帧 →
-    MiniMaxH3ImageToVideo（自带 LATENT）→ KSampler（20 步 res_multistep/simple，
-    cfg=1）→ 视频/音频双 VAEDecode → CreateVideo(fps=24) → SaveVideo
-  - `workflows/minimax_h3_t2i_i2v_api.json`：文生图→图生视频一键链——t2i 在 1344×768
-    出图直接作首帧，两颗 DiT 共享同一 CLIPLoader（TE 只加载一次）
-  - 两份均 ⚠️ 未验证（视频链路）；文生图两张既有文件不动（已验证）
+- **新增工作流两份 + 三份全部专业化重构**（节点接线对照官方模板
+  `video_minimax_h3_i2v.json` / `image_minimax_h3_t2i.json`）：
+  - 采样栈统一升级为官方架构：`RandomNoise → KSamplerSelect → BasicScheduler →
+    BasicGuider → SamplerCustomAdvanced`（BasicGuider 单条件 ≡ cfg 1.0，噪声/采样器/
+    调度器解耦）；NPU 上不挂 `ModelAttentionBackend`（comfy kitchen attention 未验证）
+  - `minimax_h3_image_t2i_api.json`：文生图（image DiT，6 步 euler/simple，结构专业化，
+    采样语义与已验证链一致）
+  - `minimax_h3_i2v_api.json`：图生视频——LoadImage 首帧 → MiniMaxH3ImageToVideo
+    （自带 LATENT）→ 专业采样栈（20 步 res_multistep/simple）→ 视频/音频双 VAEDecode
+    → CreateVideo(fps=24) → SaveVideo
+  - `minimax_h3_t2i_i2v_api.json`：文生图→图生视频一键链——t2i 在 1344×768 出图
+    直接作首帧（中间帧经 SaveImage 留档），两颗 DiT 共享同一 CLIPLoader（TE 只加载一次）
+  - 文生图两份采样语义已验证；视频链路 ⚠️ 未验证
+- **新增双模块控制台工作流** `workflows/minimax_h3_studio_ui.json`（UI 格式）：
+  图片模块默认开启（Queue 先出图），视频模块默认旁路（框选整组 Ctrl-B 解除后 Queue，
+  自动完成 文生图→图生视频 一条龙）；同 seed 同图保证首帧与上次完全一致；工作流内附
+  使用说明节点；拓扑经脚本校验（30 条连线双向一致、旁路 13/活动 12）
+- **新增 4K 直出文生图工作流** `workflows/minimax_h3_t2i_4k_api.json`：
+  3840×2160（8.3MP，节点上限 20MP 内）+ `VAEDecodeTiled`(tile 1024) 分块解码防 OOM；
+  4K 直出未实测，OOM 退 `LOWVRAM=1` 或 2MP+潜空间放大
+- **studio 控制台增强为唯一主力工作流 + 收敛工作流目录**：
+  - 图片模块升级：**4K（3840×2160）直出** + **30 步 res_multistep**（官方画质口径，
+    原注释"30 默认、50 细节最多"）+ `VAEDecodeTiled`(tile 1024) 分块解码防 OOM
+  - 新增首帧自动解耦支路：4K 图经 `ImageScaleToTotalPixels`(0.9MP) 缩放后喂给视频模块，
+    一次 Queue 完成 4K 出图 → 视频；`SaveImage` 前缀改 `h3image_studio_4k`
+  - **移除被替代的 4 份独立工作流**：`minimax_h3_image_t2i_api.json`（已验证的 6 步
+    快速链，语义并入 studio 图片模块）、`minimax_h3_i2v_api.json`、
+    `minimax_h3_t2i_i2v_api.json`、`minimax_h3_t2i_4k_api.json`；最终保留
+    `minimax_h3_studio_ui.json`（主力）+ `image_minimax_h3_t2i.json`（官方模板对照）
+  - 快速预览口径：steps 调回 6 + 分辨率 1344×768 即秒级出图
+- **910C 口径**：Atlas A3（1 卡 128GB，系统呈现 davinci0/1 双 64GB 设备）实测进行中，
+  脚本全自动适配无需改动；对 ComfyUI 的显存形态与 910B 双卡相同（v0.45 原生不做卡间
+  切分，超单设备部分走内存卸载）；README 新增视频时长上限（≈15s / 345 帧）与 4K 直出 FAQ
 - **未验证项（升级先行，真机复验待做）**：
   - 统一部署脚本本身（升级/备份/回滚路径）未在 910B 真机复验
   - 0.32 昇腾视频适配补丁（comfy-ui-changes.patch）与 Turbo 采样节点在 v0.45.4 下的

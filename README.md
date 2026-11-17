@@ -284,21 +284,22 @@ Turbo 加速 LoRA（可选，4/8 步出片，`WITH_LORA=1` 时下载）：`loras
 
 | 文件 | 链路 | 所需模型档 | 状态 |
 |---|---|---|---|
-| `image_minimax_h3_t2i.json` | 文生图（UI 模板，subgraph 封装） | image | ✅ 真机验证 |
-| `minimax_h3_image_t2i_api.json` | 文生图（API） | image | ✅ 真机验证（`scripts/test_t2i.sh` 即用此链） |
-| `minimax_h3_i2v_api.json` | 图生视频（API，首帧来自上传图片） | video | ⚠️ 未验证 |
-| `minimax_h3_t2i_i2v_api.json` | 文生图→图生视频一键链（API） | image + video | ⚠️ 未验证 |
+| `minimax_h3_studio_ui.json` | **主力双模块控制台（UI）**：①图片模块 = 4K（3840×2160）直出 + 30 步 res_multistep 高画质 + `VAEDecodeTiled` 分块解码；②视频模块 = 默认旁路，Ctrl-B 解锁后自动完成 文生图→图生视频 一条龙 | image + video | 图片链已验证；4K 直出与视频段 ⚠️ 未验证 |
+| `image_minimax_h3_t2i.json` | 官方 UI 模板（subgraph 封装，含 Turbo LoRA 开关），作对照参考 | image（官方口径用 fl2va 档 + nvfp4 TE） | 官方发布 |
 
-文生图节点链（已验证）：
+> curl / API 提交：`scripts/test_t2i.sh` 内置 API 工作流可直接用；其余在浏览器里
+> Queue 即可（需要 API JSON 时用浏览器右上角导出）。
+
+文生图节点链（采样语义已验证；结构对齐官方模板的专业采样栈）：
 
 ```
-UNETLoader(convrot DiT) ─┐
-CLIPLoader(官方TE, minimax) ── MiniMaxH3ImageConditioning ──┬─ positive ─┐
-                              └─ (内置 LATENT 输出) ────────┴─ latent ───┤
-ConditioningZeroOut ── negative ─────────────────────────────────────────┤
-                                        KSampler(6步, euler/simple, cfg=1)┘
+UNETLoader(image DiT) ─────────────┐
+CLIPLoader(官方TE, minimax) ── MiniMaxH3ImageConditioning ──┬─ positive ── BasicGuider ─┐
+                              └─ (内置 LATENT 输出) ────────┴─ latent ─────────────────┤│
+RandomNoise → KSamplerSelect(euler) → BasicScheduler(simple, 6步) ──┘                │
+                                        SamplerCustomAdvanced ←──────────────────────┘
                                               ↓
-                              VAEDecode → SaveImage
+                              VAEDecode(image VAE) → SaveImage
 ```
 
 > `MiniMaxH3ImageConditioning` 是**双输出节点**（CONDITIONING + 内置 LATENT），
@@ -309,12 +310,12 @@ ConditioningZeroOut ── negative ──────────────�
 ```
 LoadImage ── ImageScaleToTotalPixels(0.9MP) ─┐
 UNETLoader(fl2va DiT) ───────────────────────┤
-CLIPLoader(官方TE, minimax) ── MiniMaxH3ImageToVideo ──┬─ positive ─┐
-VAELoader(视频VAE) ──────────────────────────┘         └─ latent ──┤
-ConditioningZeroOut ── negative ────────────────────────────────────┤
-                    KSampler(20步, res_multistep/simple, cfg=1) ────┘
-                          ↓                  ↓
-                   VAEDecode(视频VAE)   VAEDecodeAudio(音频VAE)
+CLIPLoader(官方TE, minimax) ── MiniMaxH3ImageToVideo ──┬─ positive ── BasicGuider ─┐
+VAELoader(视频VAE) ──────────────────────────┘         └─ latent ─────────────────┤│
+RandomNoise → KSamplerSelect(res_multistep) → BasicScheduler(simple, 20步) ──┘    │
+                                        SamplerCustomAdvanced ←───────────────────┘
+                          ↓                            ↓
+                   VAEDecode(视频VAE)            VAEDecodeAudio(音频VAE)
                           └── CreateVideo(fps=24) ── SaveVideo
 ```
 
@@ -325,12 +326,19 @@ TE 只加载一次，这是链式方案的关键省资源点）。
 
 视频口径速查：
 
+- **专业采样栈**（三份 API 工作流统一采用，与官方模板一致）：
+  `RandomNoise → KSamplerSelect → BasicScheduler → BasicGuider → SamplerCustomAdvanced`。
+  `BasicGuider` 只接单条 positive 条件——语义等价于 cfg=1.0（无负向引导），与已验证
+  链路一致；好处是噪声/采样器/调度器解耦，换采样器或步数只动一个节点
 - 官方 768p = **1344×768**（约 1MP 短边 768），**24fps**；时长→帧数需满足
   `length ≡ 5 (mod 17)`（5 秒 → 124 帧，即工作流默认值）
-- 官方非 Turbo 采样：**20 步** / `res_multistep` / `simple` / cfg 1.0；装了 Turbo LoRA
-  可降到 8 步（加 `LoraLoaderModelOnly`，LoRA 文件见 `WITH_LORA=1` 下载档）
+- 官方非 Turbo 采样：**20 步** / `res_multistep` / `simple`（fl2va DiT 官方 t2i 模板
+  默认甚至 30 步）；装了 Turbo LoRA 可降到 8 步（加 `LoraLoaderModelOnly`，LoRA 文件
+  见 `WITH_LORA=1` 下载档）。image DiT 的文生图维持已验证的 **6 步 euler/simple**
 - 音频与画面共用同一 latent：视频 VAE `VAEDecode` 出画面、音频 VAE `VAEDecodeAudio`
   出声轨，`CreateVideo` 合成后交给 `SaveVideo`（mp4，format auto）
+- NPU 上**不要**加官方模板里的 `ModelAttentionBackend` 节点（comfy kitchen attention
+  在 torch_npu 上未验证），保持默认 pytorch attention
 - ⚠️ 视频链路在 v0.45.4 + 昇腾上**未验证**（模型可先行就位）；图生视频的首帧图请放
   `ComfyUI/input/` 目录（或改 `LoadImage` 的 `image` 字段）
 
@@ -344,6 +352,19 @@ bash scripts/install_workflows.sh   # ① 安装到用户目录（setup_image.sh
 ② 浏览器 Workflows → Open 里选 `user/default/workflows/minimax-h3/` 下的文件；
 ③ 把 JSON 文件从本地电脑**直接拖进浏览器画布**也能加载（API 格式同样支持）。
 API 格式（`*_api.json`）本质是给 `/prompt` 接口用的，浏览器打开后会自动展开成节点图。
+
+### 双模块控制台（`minimax_h3_studio_ui.json`）怎么用
+
+一个工作流里装了图片、视频两个模块，视频模块**默认旁路**：
+
+1. **只出图（4K 高画质）**：直接 Queue → 3840×2160 直出、30 步 `res_multistep`、
+   `VAEDecodeTiled` 分块解码，`SaveImage` 先看图
+2. **看完图出视频**：框选「② 视频模块」整组（含三颗 Loader）→ **Ctrl-B 解除旁路** → Queue
+   → 4K 图自动缩放 0.9MP 作首帧 → 图生视频一条龙，`SaveVideo` 出含音频的 mp4
+3. **快速预览**：把图片模块 `BasicScheduler` 的 steps 调回 6、宽高调回 1344×768，秒级出图；
+   正式出片再调回 30 步 / 4K
+4. 图片与视频**同 seed 同图**：`noise_seed=42` 且 fixed，开视频模块重跑时首帧与上次完全一致；
+   想换首帧来源，把 `MiniMaxH3ImageToVideo` 的 `first_frame` 改接 `LoadImage` 即可
 
 ## 常见问题
 
@@ -386,6 +407,26 @@ H3-Image 原生节点（`MiniMaxH3ImageConditioning` 等）在 v0.45.0 才进入
 
 > 注意：分片下载器会把目标文件**预分配为稀疏文件**，`ls -l` / `stat -c%s` 看着永远是全尺寸；
 > 判断真实进度请看 `du`（`dl_progress.sh` 已处理这个坑）。
+
+**Q：视频最长能生成多少秒？**
+帧数约束 `length ≡ 5 (mod 17)`（24fps），官方模型上限约 15 秒——360 帧内最大的合法值是
+**345 帧 ≈ 14.4 秒**。显存随时长线性增长（音轨 latent 同步涨），建议先 124 帧（5 秒）
+验证再逐步加；910C/910B 每 64GB 设备跑 345 帧 768p 未验证。
+
+**Q：图片能直出 4K 吗？**
+**能。** `MiniMaxH3ImageConditioning` 上限 20MP、宽高比 ≤3:1、边长 16 的倍数——4K
+（3840×2160 = 8.3MP）在范围内。控制台工作流 `minimax_h3_studio_ui.json` 的图片模块
+即默认 4K 直出，并内置 `VAEDecodeTiled`（tile_size 1024）分块解码防 OOM。注意：直接
+生成 8.3MP 的采样显存约为已验证 2MP 的 3.5 倍，未实测；OOM 就 `LOWVRAM=1` 启动，
+或把分辨率调回 2MP + 潜空间放大（`MiniMaxH3LatentUpscaleWithModel`，官方推荐路径）。
+
+**Q：910C（1×128GB）和 910B（2×64GB）有什么差别？**
+脚本全自动适配——`NPU_DEVICES` 按 `/dev/davinci*` 数量识别，910C 也不用手动改。
+910C 对系统呈现为 2 个 64GB 设备（`davinci0/1`，合计 128GB HBM），对 ComfyUI 的显存形态
+与 910B 双卡相同：v0.45 原生不做卡间切分，单模型超 64GB 的部分走内存卸载。
+注意区分：云控制台规格里的 "240GiB" 是**系统内存**（启动日志 `host has 234948 MB` 可对上），
+不是 NPU 显存——它是 ComfyUI 的卸载池，跑 4K/长视频的兜底空间。910C
+（Atlas A3，CANN 9.0.0 py3.11 arm 镜像）实测进行中，启动链路已跑通至依赖对齐。
 
 **Q：下载报 429 / 卡在某个文件？**
 hf-mirror 是共享配额，被限流时稍等重跑 `download_models_image.sh`（自动断点续传）。
