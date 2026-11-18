@@ -426,12 +426,13 @@ H3-Image 原生节点（`MiniMaxH3ImageConditioning` 等）在 v0.45.0 才进入
 能，但**尺寸必须落在 32 倍数网格**（官方要求，踩坑记录坑 9）：
 - ✅ 4K 正确尺寸：**4096×2304**（16:9、8.3MP、32 网格合法）
 - ❌ 3840×2160：2160 不是 32 的倍数——真机实测整图发糊
-- **int8 量化版高分直出疑似量化退化**：4096×2304 合法网格仍糊时，改用 **bf16 全量**
-  `minimax_h3_image_pruned_bf16.safetensors`（40.23GB，现已加入下载清单，studio 已切换）
-- 官方 image 模型**原生支持约 16MP 直出**（示例 4096×4096、5472×3072），无需放大链；
-  分辨率越高显存越大，OOM 就 `LOWVRAM=1`
+- **4K 显存账本**：bf16 DiT 38.4GB + TE 25.9GB = 64.3GB **> 单设备 61GB**——4K 跑 bf16
+  必须 `LOWVRAM=1` 启动（乒乓卸载，单张约 2~4 分钟）；或 4K 时把 UNETLoader 换 int8 版
+  （20+25.9=46GB 从容，6 步口径下清晰度复验中）
+- **两条真机踩过的坑**：步数超蒸馏设计（>10 步）会烧图（脏斑，坑 10）；
+  **denoise 必须 1.0**（0.9 残留噪声，发软发脏）
+- 官方 image 模型**原生支持约 16MP 直出**（示例 4096×4096、5472×3072），无需放大链
 - studio 控制台默认 2048×1152（已验证清晰档），要 4K 就把宽高改成 4096×2304
-- ⚠️ bf16 版 4K 清晰度待真机复验
 
 **Q：910C（1×128GB）和 910B（2×64GB）有什么差别？**
 脚本全自动适配——`NPU_DEVICES` 按 `/dev/davinci*` 数量识别，910C 也不用手动改。
@@ -440,6 +441,28 @@ H3-Image 原生节点（`MiniMaxH3ImageConditioning` 等）在 v0.45.0 才进入
 注意区分：云控制台规格里的 "240GiB" 是**系统内存**（启动日志 `host has 234948 MB` 可对上），
 不是 NPU 显存——它是 ComfyUI 的卸载池，跑 4K/长视频的兜底空间。910C
 （Atlas A3，CANN 9.0.0 py3.11 arm 镜像）实测进行中，启动链路已跑通至依赖对齐。
+
+**Q：服务跑着跑着假死了（SSH 正常、网页打不开）怎么办？**
+**第一步先分水岭**：SSH 里跑 `curl -s --max-time 5 http://127.0.0.1:8188/system_stats`
+——**有输出 = 服务健康，是端口转发断了**，重建转发即可（别杀进程！）；无输出才是服务问题。
+真机经验：py-spy 抓栈显示全线程空闲、NPU 健康、内存充裕，"打不开"多为转发链路掉线。
+三层处理：
+1. **看门狗自动恢复**（推荐）：`nohup bash scripts/watchdog.sh >> /mnt/workspace/runtime/watchdog.log 2>&1 &`
+   （在 tmux 里挂上）——每 30 秒探测 `/system_stats`，连续 3 次不通自动杀进程重启；
+   `watchdog.log` 同时是判官：它显示探测正常而你浏览器打不开 = 实锤转发问题；
+   人工维护时 `touch /mnt/workspace/runtime/watchdog.pause` 暂停
+2. **抓现场**：`venv045/bin/pip install py-spy` 后
+   `py-spy dump --pid $(cat /mnt/workspace/runtime/comfyui-8188.pid)` 看卡在哪个调用；
+   配合 `npu-smi info`（设备健康）与 `free -h`（内存水位）
+3. **防断与降压**：服务必须跑在 tmux 里（裸 SSH 断连会 SIGHUP 杀进程）；SSH 隧道转发加
+   `-o ServerAliveInterval=15 -o ServerAliveCountMax=4`（或 autossh 自动重连）；
+   `NO_SMART_MEM=1 bash scripts/start_comfyui.sh` 关闭 RAM pressure cache 降内存压力；
+   日常出图用 int8 DiT 减少乒乓吞吐
+4. **VS Code 端口转发用户（真机在用）**：生成图片后浏览器断连，多为 VS Code 转发通道
+   被大图传输/空闲超时掐断——修法：`~/.ssh/config` 里给主机加 `ServerAliveInterval 15`
+   + `ServerAliveCountMax 4` + `TCPKeepAlive yes`（VS Code Remote-SSH 用该别名连接）；
+   「端口」面板**手动添加** 8188 转发（不依赖自动转发）；ComfyUI 务必在 tmux 里启动，
+   与 VS Code 生命周期完全解耦；看门狗日志可实锤断连发生在转发层
 
 **Q：下载报 429 / 卡在某个文件？**
 hf-mirror 是共享配额，被限流时稍等重跑 `download_models_image.sh`（自动断点续传）。

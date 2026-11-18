@@ -111,8 +111,8 @@
         { "name": "SAMPLER", "type": "SAMPLER", "links": [7] }
       ],
       "properties": { "Node name for S&R": "KSamplerSelect" },
-      "widgets_values": ["res_multistep"],
-      "widgets_values_named": { "sampler_name": "res_multistep" }
+      "widgets_values": ["euler"],
+      "widgets_values_named": { "sampler_name": "euler" }
     },
     {
       "id": 10,
@@ -128,8 +128,8 @@
         { "name": "SIGMAS", "type": "SIGMAS", "links": [8] }
       ],
       "properties": { "Node name for S&R": "BasicScheduler" },
-      "widgets_values": ["simple", 30, 1.0],
-      "widgets_values_named": { "scheduler": "simple", "steps": 30, "denoise": 1.0 }
+      "widgets_values": ["simple", 6, 1.0],
+      "widgets_values_named": { "scheduler": "simple", "steps": 6, "denoise": 1.0 }
     },
     {
       "id": 11,
@@ -460,7 +460,7 @@
       "title": "双模块控制台 · 使用说明",
       "properties": {},
       "widgets_values": [
-        "## 双模块控制台\n\n**① 图片模块（默认开启）**：默认 **2048×1152（已验证清晰档）** + 30 步 res_multistep 画质口径，VAEDecodeTiled 分块解码。直接 Queue 出图（SaveImage）。\n\n**高分辨率注意**：官方要求宽高为 **32 的倍数**！4K 请用 **4096×2304**（16:9 且 32 网格合法）；3840×2160 的 2160 非 32 倍数，真机实测发糊（踩坑记录坑 9）。官方 image 模型原生支持约 16MP（示例 5472×3072），分辨率越高显存越大，OOM 就 LOWVRAM=1。\n\n**② 视频模块（默认旁路）**：框选本组全部节点（含三颗 Loader）→ **Ctrl-B 解除旁路** → Queue，自动完成 文生图 → 缩放 0.9MP → 图生视频 一条龙（SaveVideo 出 mp4，含音频）。\n\n- `noise_seed` 固定 42 且 fixed：重跑图片完全一致。\n- 想用外部图片当首帧：把 `MiniMaxH3ImageToVideo` 的 `first_frame` 改接 `LoadImage`。\n- 时长：`length` 需满足 ≡5 (mod 17)，24fps；5 秒=124 帧，官方上限约 15 秒（345 帧）。\n- ⚠️ 视频链路在 v0.45.4 + 昇腾上未验证。"
+        "## 双模块控制台\n\n**① 图片模块（默认开启）**：默认 **2048×1152 + 6 步 euler/simple**（官方蒸馏调度口径，docs.comfy.org：6 步 euler/simple cfg=1）。VAEDecodeTiled 分块解码。直接 Queue 出图（SaveImage）。\n\n**⚠️ 步数警告**：image 模型是蒸馏模型，**超过设计步数会烧图**——30 步实测脏斑杂糅（踩坑记录坑 9）；要细节可在 6~10 步内微调，别上 30。\n\n**⚠️ denoise 必须 1.0**：文生图 denoise=0.9 会残留 10% 噪声（发软发脏），真机踩过。\n\n**高分辨率/显存**：官方要求宽高为 **32 的倍数**！4K 用 **4096×2304**（3840×2160 非 32 倍数实测发糊）。**显存账本**：bf16 DiT 38.4GB + TE 25.9GB = 64.3GB > 单设备 61GB——4K 跑 bf16 必须 `LOWVRAM=1` 启动（乒乓卸载，单张 2~4 分钟）；或 4K 时把 UNETLoader 换回 int8 版（20GB，装得下，6 步口径下清晰度待复验）。官方 image 模型原生支持约 16MP（示例 5472×3072）。\n\n**② 视频模块（默认旁路）**：框选本组全部节点（含三颗 Loader）→ **Ctrl-B 解除旁路** → Queue，自动完成 文生图 → 缩放 0.9MP → 图生视频 一条龙（SaveVideo 出 mp4，含音频）。视频段是 20 步 res_multistep（fl2va 模型口径，与图片模型不同）。\n\n- `noise_seed` 固定 42 且 fixed：重跑图片完全一致。\n- 想用外部图片当首帧：把 `MiniMaxH3ImageToVideo` 的 `first_frame` 改接 `LoadImage`。\n- 时长：`length` 需满足 ≡5 (mod 17)，24fps；5 秒=124 帧，官方上限约 15 秒（345 帧）。\n- ⚠️ 视频链路在 v0.45.4 + 昇腾上未验证。"
       ],
       "color": "#222",
       "bgcolor": "#000"

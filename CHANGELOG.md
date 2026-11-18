@@ -91,11 +91,24 @@
     `minimax_h3_t2i_i2v_api.json`、`minimax_h3_t2i_4k_api.json`；最终保留
     `minimax_h3_studio_ui.json`（主力）+ `image_minimax_h3_t2i.json`（官方模板对照）
   - 快速预览口径：steps 调回 6 + 分辨率 1344×768 即秒级出图
+- **新增服务看门狗** `scripts/watchdog.sh`（真机反馈：出图后偶发假死——进程活着、
+  SSH 正常、网页打不开，需手动重启+重新转发端口）：每 30s 探测 /system_stats，
+  连续 3 次失败自动杀进程并拉起（tmux 里 nohup 挂载；watchdog.pause 文件可暂停）；
+  `start_comfyui.sh` 新增 `NO_SMART_MEM=1` 开关（关闭 RAM pressure cache，
+  假死嫌疑源之一）；README 新增假死处理 FAQ（py-spy 抓栈 + npu-smi + free 三件套）
+- **4K bf16 OOM 真机定位 + 显存账本入文档**：bf16 DiT 38.4GB + TE 25.9GB = 64.3GB
+  超单设备 61GB（2MP 靠乒乓卸载腾挪成功，4K 激活压穿）——4K 跑 bf16 需 `LOWVRAM=1`；
+  或换 int8 DiT（46GB 从容，6 步口径复验中）。另真机踩坑：**denoise 0.9 残留噪声**
+  （文生图必须 1.0），已写入 studio 说明与 README
 - **image DiT 切换 bf16 全量**（真机反馈：4096×2304 合法网格下 int8 版仍糊，疑似
   量化高分退化）：下载清单/studio 控制台/test_t2i.sh 全部切换到
   `minimax_h3_image_pruned_bf16.safetensors`（40.23GB，官方标注 full precision），
   int8 退出下载清单（主机端旧文件由所有者验证 bf16 后自行删除）；
   image 档下载量 46GB→约 66GB；⚠️ bf16 版 4K 清晰度待真机复验
+- **修复烧图脏斑（真机反馈）+ 新增踩坑记录坑 10**：studio 图片模块曾用 30 步
+  res_multistep（参数误抄自官方 fl2va 模板）——image 模型是蒸馏调度，docs 明确
+  **6 步 euler/simple cfg=1**，超步数烧图（皮肤/衣物脏斑+发软，2048×1152 真机复现）。
+  已回退 6 步 euler；连带说明：坑 9 的 int8/bf16 与分辨率对比需在 6 步口径下重做
 - **修复 4K 直出发糊（真机反馈）+ 新增踩坑记录坑 9**：分辨率必须在 **32 倍数网格**——
   3840×2160 的 2160 非 32 倍数（÷32=67.5），网格错位导致整图发软；4K 正确尺寸
   **4096×2304**。连带纠正文档口径错误：H3 **image** 模型原生支持约 16MP 直出

@@ -82,6 +82,12 @@ fi
 if [ "${NORMALVRAM:-0}" = "1" ]; then
     ARGS="$ARGS --normalvram"
 fi
+# 内存缓存开关：RAM pressure cache 疑似与 torch_npu 假死相关时打开（NO_SMART_MEM=1），
+# 模型卸载后直接释放内存不再驻留缓存——重载变慢，但内存压力与缓存行为更简单
+if [ "${NO_SMART_MEM:-0}" = "1" ]; then
+    echo "禁用智能内存缓存 (--disable-smart-memory)"
+    ARGS="$ARGS --disable-smart-memory"
+fi
 
 echo "$$" > "$PID_FILE"
 cd "$COMFY_HOME"
