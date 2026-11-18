@@ -214,9 +214,13 @@ WITH_HERETIC_TE=1 bash scripts/download_models_image.sh all  # 额外无审查 h
 
 | 文件 | 大小 | 放置目录 | 说明 |
 |---|---|---|---|
-| `minimax_h3_image_pruned_int8_convrot.safetensors` | 19.54 GB | `models/diffusion_models/` | DiT 主模型（INT8 convrot，实测可跑） |
+| `minimax_h3_image_pruned_bf16.safetensors` | 40.23 GB | `models/diffusion_models/` | DiT 主模型（**bf16 全量**；int8 量化版高分直出发糊已退出清单，见坑 9） |
 | `qwen3vl_32b_minimax_h3_int8_convrot.safetensors` | 25.28 GB | `models/text_encoders/official/` | **必须官方版**（见坑 ①），文生图/图生视频共用 |
 | `minimax_h3_image_vae_fp16.safetensors` | 1.09 GB | `models/vae/` | image VAE |
+
+> image 档下载量约 66GB；bf16 权重 40GB < 单设备 64GB，910C/910B 均可直载。
+> 旧 int8 主模型（19.54GB）验证 bf16 清晰度后可手动删除：
+> `rm models/diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors`
 
 图生视频模型（可选，⚠️ 0.45 下视频链路未验证）：
 
@@ -324,6 +328,11 @@ RandomNoise → KSamplerSelect(res_multistep) → BasicScheduler(simple, 20步) 
 `MiniMaxH3ImageToVideo.first_frame`；两颗 DiT **共享同一个 CLIPLoader**（25GB 的
 TE 只加载一次，这是链式方案的关键省资源点）。
 
+提示词语言：TE 是 **Qwen3-VL-32B**，中英双语原生支持，studio 工作流内置的就是中文提示词
+（控制台两处 prompt 直接改中文即可）；可用「中文主体 + 英文质量词」混排策略。中文出图
+质量未实测（真机验证用的英文），跑一张对比即可。古风长提示词范本（约 500 字，含要素
+拆解表与配套参数）：[workflows/prompt_gufeng_4k.md](workflows/prompt_gufeng_4k.md)。
+
 视频口径速查：
 
 - **专业采样栈**（三份 API 工作流统一采用，与官方模板一致）：
@@ -414,11 +423,15 @@ H3-Image 原生节点（`MiniMaxH3ImageConditioning` 等）在 v0.45.0 才进入
 验证再逐步加；910C/910B 每 64GB 设备跑 345 帧 768p 未验证。
 
 **Q：图片能直出 4K 吗？**
-**能。** `MiniMaxH3ImageConditioning` 上限 20MP、宽高比 ≤3:1、边长 16 的倍数——4K
-（3840×2160 = 8.3MP）在范围内。控制台工作流 `minimax_h3_studio_ui.json` 的图片模块
-即默认 4K 直出，并内置 `VAEDecodeTiled`（tile_size 1024）分块解码防 OOM。注意：直接
-生成 8.3MP 的采样显存约为已验证 2MP 的 3.5 倍，未实测；OOM 就 `LOWVRAM=1` 启动，
-或把分辨率调回 2MP + 潜空间放大（`MiniMaxH3LatentUpscaleWithModel`，官方推荐路径）。
+能，但**尺寸必须落在 32 倍数网格**（官方要求，踩坑记录坑 9）：
+- ✅ 4K 正确尺寸：**4096×2304**（16:9、8.3MP、32 网格合法）
+- ❌ 3840×2160：2160 不是 32 的倍数——真机实测整图发糊
+- **int8 量化版高分直出疑似量化退化**：4096×2304 合法网格仍糊时，改用 **bf16 全量**
+  `minimax_h3_image_pruned_bf16.safetensors`（40.23GB，现已加入下载清单，studio 已切换）
+- 官方 image 模型**原生支持约 16MP 直出**（示例 4096×4096、5472×3072），无需放大链；
+  分辨率越高显存越大，OOM 就 `LOWVRAM=1`
+- studio 控制台默认 2048×1152（已验证清晰档），要 4K 就把宽高改成 4096×2304
+- ⚠️ bf16 版 4K 清晰度待真机复验
 
 **Q：910C（1×128GB）和 910B（2×64GB）有什么差别？**
 脚本全自动适配——`NPU_DEVICES` 按 `/dev/davinci*` 数量识别，910C 也不用手动改。

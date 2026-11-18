@@ -21,7 +21,7 @@ import os
 
 wf = {
     "1": {"class_type": "UNETLoader", "inputs": {
-        "unet_name": "minimax_h3_image_pruned_int8_convrot.safetensors",
+        "unet_name": "minimax_h3_image_pruned_bf16.safetensors",
         "weight_dtype": "default"}},
     "2": {"class_type": "CLIPLoader", "inputs": {
         "clip_name": "official/qwen3vl_32b_minimax_h3_int8_convrot.safetensors",

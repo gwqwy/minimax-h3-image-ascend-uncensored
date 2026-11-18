@@ -23,7 +23,7 @@
 #   - WITH_HERETIC_TE=1：ethanfel 无审查文本编码器（视频版默认下载，本仓库改默认关闭，原因见下）
 #
 # 文生图（Comfy-Org/MiniMax-H3-Image）:
-#   diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors        19.54 GB
+#   diffusion_models/minimax_h3_image_pruned_bf16.safetensors               40.23 GB（全量，int8 已退出）
 #   text_encoders/official/qwen3vl_32b_minimax_h3_int8_convrot.safetensors   25.28 GB
 #   vae/minimax_h3_image_vae_fp16.safetensors                                 1.09 GB
 #
@@ -85,9 +85,11 @@ add() {
 }
 
 if [ "$SCOPE" = "image" ] || [ "$SCOPE" = "all" ]; then
+  # image DiT 用 bf16 全量（40.2GB）：int8 量化版 4K/高分直出疑似量化退化（发糊），
+  # 已退出清单；权重 40GB < 单设备 64GB，910C/910B 均可直载
   add "Comfy-Org/MiniMax-H3-Image" \
-      "diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors" \
-      "diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors" 19540000000
+      "diffusion_models/minimax_h3_image_pruned_bf16.safetensors" \
+      "diffusion_models/minimax_h3_image_pruned_bf16.safetensors" 40000000000
   add "Comfy-Org/MiniMax-H3-Image" \
       "text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors" \
       "text_encoders/official/qwen3vl_32b_minimax_h3_int8_convrot.safetensors" 25280000000

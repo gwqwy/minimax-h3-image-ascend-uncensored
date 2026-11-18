@@ -16,9 +16,9 @@
         { "name": "MODEL", "type": "MODEL", "links": [2, 3] }
       ],
       "properties": { "Node name for S&R": "UNETLoader" },
-      "widgets_values": ["minimax_h3_image_pruned_int8_convrot.safetensors", "default"],
+      "widgets_values": ["minimax_h3_image_pruned_bf16.safetensors", "default"],
       "widgets_values_named": {
-        "unet_name": "minimax_h3_image_pruned_int8_convrot.safetensors",
+        "unet_name": "minimax_h3_image_pruned_bf16.safetensors",
         "weight_dtype": "default"
       }
     },
@@ -72,14 +72,14 @@
       ],
       "properties": { "Node name for S&R": "MiniMaxH3ImageConditioning" },
       "widgets_values": [
-        "ancient chinese fantasy, a white-robed swordswoman standing on a bamboo sea peak, moonlight like water, robe and long hair flowing in wind, her sword glowing with azure spirit light, distant mountains wrapped in mist and cloud, cinematic composition, low-angle shot, guofeng fantasy aesthetic, ultra detailed",
-        3840,
-        2160
+        "中国古风奇幻：一位白衣女剑客伫立竹海之巅，月光如水，衣袂与长发随风飘扬，手中长剑流转青色灵光，远山云雾缭绕，电影感构图，低角度仰拍镜头，国风幻想美学，超精细画质",
+        2048,
+        1152
       ],
       "widgets_values_named": {
-        "prompt": "ancient chinese fantasy, a white-robed swordswoman standing on a bamboo sea peak, moonlight like water, robe and long hair flowing in wind, her sword glowing with azure spirit light, distant mountains wrapped in mist and cloud, cinematic composition, low-angle shot, guofeng fantasy aesthetic, ultra detailed",
-        "width": 3840,
-        "height": 2160
+        "prompt": "中国古风奇幻：一位白衣女剑客伫立竹海之巅，月光如水，衣袂与长发随风飘扬，手中长剑流转青色灵光，远山云雾缭绕，电影感构图，低角度仰拍镜头，国风幻想美学，超精细画质",
+        "width": 2048,
+        "height": 1152
       },
       "color": "#232",
       "bgcolor": "#353"
@@ -283,13 +283,13 @@
       ],
       "properties": { "Node name for S&R": "MiniMaxH3ImageToVideo" },
       "widgets_values": [
-        "the swordswoman's robe and long hair flow in the mountain wind, moonlight shifts across the drifting mist, her sword's azure light pulses softly, slow cinematic camera push-in, natural fluid motion",
+        "女剑客的衣袂与长发在山风中飘扬，月光在流云薄雾间明暗流转，剑上青光柔和脉动，缓慢的电影式推镜，自然流畅的动态",
         1344,
         768,
         124
       ],
       "widgets_values_named": {
-        "prompt": "the swordswoman's robe and long hair flow in the mountain wind, moonlight shifts across the drifting mist, her sword's azure light pulses softly, slow cinematic camera push-in, natural fluid motion",
+        "prompt": "女剑客的衣袂与长发在山风中飘扬，月光在流云薄雾间明暗流转，剑上青光柔和脉动，缓慢的电影式推镜，自然流畅的动态",
         "width": 1344,
         "height": 768,
         "length": 124
@@ -460,7 +460,7 @@
       "title": "双模块控制台 · 使用说明",
       "properties": {},
       "widgets_values": [
-        "## 双模块控制台\n\n**① 图片模块（默认开启）**：4K 直出（3840×2160）+ 30 步 res_multistep 官方画质口径，VAEDecodeTiled 分块解码防 OOM。直接 Queue 出图（SaveImage）。\n\n**② 视频模块（默认旁路）**：框选本组全部节点（含三颗 Loader）→ **Ctrl-B 解除旁路** → Queue，自动完成 文生图(4K) → 缩放 0.9MP → 图生视频 一条龙（SaveVideo 出 mp4，含音频）。4K 图与视频首帧自动解耦（缩放支路）。\n\n- **快速预览**：把图片模块 BasicScheduler 的 steps 从 30 调回 6、宽高调回 1344×768，秒级出图；正式出片再调回。\n- `noise_seed` 固定 42 且 fixed：重跑图片完全一致。\n- 想用外部图片当首帧：把 `MiniMaxH3ImageToVideo` 的 `first_frame` 改接 `LoadImage`。\n- 时长：`length` 需满足 ≡5 (mod 17)，24fps；5 秒=124 帧，官方上限约 15 秒（345 帧）。\n- 显存：4K 采样显存 ≈ 2MP 的 3.5 倍，OOM 就 `LOWVRAM=1` 启动服务。\n- ⚠️ 4K 直出与视频链路在 v0.45.4 + 昇腾上未验证。"
+        "## 双模块控制台\n\n**① 图片模块（默认开启）**：默认 **2048×1152（已验证清晰档）** + 30 步 res_multistep 画质口径，VAEDecodeTiled 分块解码。直接 Queue 出图（SaveImage）。\n\n**高分辨率注意**：官方要求宽高为 **32 的倍数**！4K 请用 **4096×2304**（16:9 且 32 网格合法）；3840×2160 的 2160 非 32 倍数，真机实测发糊（踩坑记录坑 9）。官方 image 模型原生支持约 16MP（示例 5472×3072），分辨率越高显存越大，OOM 就 LOWVRAM=1。\n\n**② 视频模块（默认旁路）**：框选本组全部节点（含三颗 Loader）→ **Ctrl-B 解除旁路** → Queue，自动完成 文生图 → 缩放 0.9MP → 图生视频 一条龙（SaveVideo 出 mp4，含音频）。\n\n- `noise_seed` 固定 42 且 fixed：重跑图片完全一致。\n- 想用外部图片当首帧：把 `MiniMaxH3ImageToVideo` 的 `first_frame` 改接 `LoadImage`。\n- 时长：`length` 需满足 ≡5 (mod 17)，24fps；5 秒=124 帧，官方上限约 15 秒（345 帧）。\n- ⚠️ 视频链路在 v0.45.4 + 昇腾上未验证。"
       ],
       "color": "#222",
       "bgcolor": "#000"
