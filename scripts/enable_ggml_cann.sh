@@ -45,13 +45,54 @@ fetch_pin() {
   if [ "$HEALTHY" != "1" ]; then
     rm -rf "$WORK/llama.cpp"
     mkdir -p "$WORK"
-    echo "… 全量克隆上游 llama.cpp（约 115MB，网络抖动时重试本脚本即可）"
-    git clone "$UPSTREAM" "$WORK/llama.cpp" 2>&1 | tail -1
-    ( cd "$WORK/llama.cpp" && git checkout -q --detach "$PIN" ) \
-      || { echo "!! 无法检出 pin $PIN"; exit 1; }
+    echo "… 克隆上游 llama.cpp（约 115MB；GnuTLS 报错=网络抖动，脚本会自动换源重试）"
+    CLONED=0
+    for src in "$UPSTREAM" "https://gitclone.com/github.com/ggml-org/llama.cpp"; do
+      for attempt in 1 2; do
+        echo "  --- 尝试: $src（第 $attempt 次）"
+        if git clone "$src" "$WORK/llama.cpp" 2>&1 | tail -1; then
+          [ -d "$WORK/llama.cpp/.git" ] && CLONED=1 && break 2
+        fi
+        rm -rf "$WORK/llama.cpp"
+        sleep 5
+      done
+    done
+    if [ "$CLONED" != "1" ]; then
+      echo "  --- git 克隆全部失败，改用 pin tarball（多镜像轮试 + 已下载文件复用）"
+      # 复用手动下载：用户可自行 curl/网页下载放到 /tmp/llamacpp-pin.tar.gz，脚本直接用
+      sz=$(stat -c%s /tmp/llamacpp-pin.tar.gz 2>/dev/null || echo 0)
+      TARBALL_OK=0
+      [ "$sz" -gt 10000000 ] && { echo "  检测到已存在的 tarball（$sz 字节），直接使用"; TARBALL_OK=1; }
+      if [ "$TARBALL_OK" != "1" ]; then
+        for tu in "https://codeload.github.com/ggml-org/llama.cpp/tar.gz/$PIN" \
+                  "https://ghfast.top/https://codeload.github.com/ggml-org/llama.cpp/tar.gz/$PIN" \
+                  "https://gh-proxy.com/https://codeload.github.com/ggml-org/llama.cpp/tar.gz/$PIN" \
+                  "https://github.moeyy.xyz/https://codeload.github.com/ggml-org/llama.cpp/tar.gz/$PIN" \
+                  "https://ghproxy.net/https://codeload.github.com/ggml-org/llama.cpp/tar.gz/$PIN"; do
+          echo "  --- tarball: $tu"
+          if curl -sL --retry 2 --max-time 540 -o /tmp/llamacpp-pin.tar.gz "$tu" 2>/dev/null; then
+            sz=$(stat -c%s /tmp/llamacpp-pin.tar.gz 2>/dev/null || echo 0)
+            [ "$sz" -gt 10000000 ] && TARBALL_OK=1 && break
+          fi
+          sleep 3
+        done
+      fi
+      [ "$TARBALL_OK" = "1" ] || { echo "!! 所有源均失败——也可手动下载 pin tarball 放到 /tmp/llamacpp-pin.tar.gz 后重跑"; exit 1; }
+      mkdir -p "$WORK/llama.cpp"
+      tar -xzf /tmp/llamacpp-pin.tar.gz -C "$WORK/llama.cpp" --strip-components=1
+      rm -f /tmp/llamacpp-pin.tar.gz
+      echo "  （tarball 路线：无 .git，不影响 patch 使用——patch 只需要源文件）"
+    fi
+
+    # 若是 git 检出则对齐 pin；tarball 天生就在 pin 上
+    if [ -d "$WORK/llama.cpp/.git" ]; then
+      ( cd "$WORK/llama.cpp" && git checkout -q --detach "$PIN" 2>/dev/null ) \
+        || echo "（pin 检出失败，沿用克隆时版本——ggml-cann 在场即可）"
+    fi
+
     [ -d "$WORK/llama.cpp/ggml/src/ggml-cann" ] \
-      || { echo "!! 全新检出仍缺 ggml/src/ggml-cann——请截图上报"; exit 1; }
-    echo "✓ 全新检出完成（pin + ggml-cann 均在）"
+      || { echo "!! 检出仍缺 ggml/src/ggml-cann——请截图上报"; exit 1; }
+    echo "✓ 源码就绪（pin + ggml-cann 均在）"
   fi
 }
 
