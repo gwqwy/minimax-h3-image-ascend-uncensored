@@ -23,13 +23,36 @@ WORK="${STRATA_CANN_WORK:-/mnt/workspace/runtime/llamacpp-cann}"
 CMD="${1:-baseline}"
 
 fetch_pin() {
-  # 按 pin 精确取上游源码（GitHub 支持按可达 SHA fetch；失败则退回 HEAD 并告警）
-  if [ -d "$WORK/llama.cpp" ]; then echo "… 复用已存在的 llama.cpp 检出: $WORK/llama.cpp"; return 0; fi
-  mkdir -p "$WORK"
-  git clone "$UPSTREAM" "$WORK/llama.cpp" 2>&1 | tail -1
-  ( cd "$WORK/llama.cpp" && git fetch origin "$PIN" 2>/dev/null && git checkout -q "$PIN" ) \
-    && echo "✓ 已切到 pin $PIN" \
-    || echo "!! 按 pin 检出失败，当前为 HEAD（ggml-cann 实现可能与内嵌 API 有偏移，构建报错时回退到 pin 重试）"
+  # 按 pin 精确取上游源码；严格自愈：复用检出必须通过健康检查（pin 一致 + ggml-cann 在场），
+  # 否则删除重克隆——网络中断留下的残缺检出是"上游检出中无 ggml/src/ggml-cann"的根源
+  local HEALTHY=0
+  if [ -d "$WORK/llama.cpp/.git" ]; then
+    echo "… 复用已存在的检出: $WORK/llama.cpp（校验中）"
+    if ( cd "$WORK/llama.cpp" && git fetch origin "$PIN" 2>/dev/null \
+         && git checkout -q --detach "$PIN" 2>/dev/null \
+         && git cat-file -e "$PIN^{commit}" 2>/dev/null ); then
+      if [ -d "$WORK/llama.cpp/ggml/src/ggml-cann" ]; then
+        echo "✓ 检出健康（pin + ggml-cann 均在）"
+        HEALTHY=1
+      else
+        echo "!! 检出已到 pin 但缺 ggml-cann（异常状态），重建"
+      fi
+    else
+      echo "!! 检出无法到达 pin（残缺/浅克隆），重建"
+    fi
+  fi
+
+  if [ "$HEALTHY" != "1" ]; then
+    rm -rf "$WORK/llama.cpp"
+    mkdir -p "$WORK"
+    echo "… 全量克隆上游 llama.cpp（约 115MB，网络抖动时重试本脚本即可）"
+    git clone "$UPSTREAM" "$WORK/llama.cpp" 2>&1 | tail -1
+    ( cd "$WORK/llama.cpp" && git checkout -q --detach "$PIN" ) \
+      || { echo "!! 无法检出 pin $PIN"; exit 1; }
+    [ -d "$WORK/llama.cpp/ggml/src/ggml-cann" ] \
+      || { echo "!! 全新检出仍缺 ggml/src/ggml-cann——请截图上报"; exit 1; }
+    echo "✓ 全新检出完成（pin + ggml-cann 均在）"
+  fi
 }
 
 case "$CMD" in
@@ -65,6 +88,15 @@ patch)
   rm -rf "$GG/src/ggml-cann"
   cp -r "$SRC/ggml-cann" "$GG/src/ggml-cann"
   echo "✓ 实现 $(find "$GG/src/ggml-cann" -type f | wc -l) 文件"
+
+  # ggml-cann 编译还需要 Ascend CANN toolkit 头文件（acl/ascendc），由主机 set_env.sh 提供——
+  # 构建前先校验，缺了直接报清楚而不是让 CMake 半路失败
+  CANN_HOME=""
+  for p in /usr/local/Ascend/ascend-toolkit "$HOME/Ascend/ascend-toolkit" /home/*/Ascend/ascend-toolkit; do
+    [ -f "$p/set_env.sh" ] && CANN_HOME="$p" && break
+  done
+  [ -n "$CANN_HOME" ] && echo "✓ CANN toolkit: $CANN_HOME" \
+    || echo "!! 未找到 CANN toolkit——build 前先 source set_env.sh"
 
   echo "… 恢复 ggml-cann 依赖的文件（如缺失）"
   for f in $(cd "$SRC" && find ggml-cann -type f 2>/dev/null); do :; done  # 目录整体已拷贝
