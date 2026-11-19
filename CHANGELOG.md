@@ -114,6 +114,17 @@
   **4096×2304**。连带纠正文档口径错误：H3 **image** 模型原生支持约 16MP 直出
   （官方示例 4096×4096 / 5472×3072，无需放大链），此前误引 video 模型的"1MP/768
   短边"口径。studio 默认回退已验证清晰的 2048×1152，内嵌说明更新
+- **路径 A 激活脚本就绪** `scripts/enable_ggml_cann.sh`（baseline / patch / build 三
+  子命令，幂等）：按内嵌树 pin（llama.cpp 3cf03257）精确恢复被 vendoring 裁剪的
+  `ggml/src/ggml-cann/` 实现与 GGML_CANN CMake 开关（自包含块注入，避开上游 if 嵌套）；
+  勘察补充：内嵌树 `ggml/include/ggml-cann.h` 已在场，双 ggml 结构（引擎精简版 /
+  vision 完整版）中恢复的是完整版
+- **新增 Strata → 昇腾 NPU 适配路线图** `docs/strata-npu-适配路线图.md`：源码实盘分析
+  Strata 引擎（Niko1221/Strata，45.8k★，C++/CUDA-first）后给出三条路径——
+  A. 激活内嵌 ggml 的 CANN 后端（注册钩子已存在，上游 ggml-cann 实现现成，天~周级）；
+  B. 自有 CUDA 内核 Ascend C 重写（月级）；C. 绕过 Strata 直接 llama.cpp+ggml-cann。
+  含 910C 内存账本（Qwen3.8-Flash-Next IQ3_S 54.8GB 从容；V4.1 Flash 1-bit 233GB
+  ⚠️ 可试速度未验证）、阶段计划与风险清单；⚠️ 全部性能数字为预估未真机验证
 - **新增古风提示词范本** `workflows/prompt_gufeng_4k.md`：约 500 字中文长提示词
   （月下剑舞·竹海仙山场景，主体/环境/光影/构图/色调/风格七维要素拆解表 + studio
   配套参数与快速预览口径），studio 两处提示词同步换为中文版（Qwen3-VL 中英双语

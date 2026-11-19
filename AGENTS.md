@@ -13,6 +13,9 @@
 
 ## 验证纪律
 
+- **所有脚本默认在昇腾主机上运行**（aarch64 Linux + CANN）：路径、环境变量、依赖都以
+  主机为准（/mnt/workspace、set_env.sh、npu-smi），不写代理协作机（Windows）专属的
+  假设；代理只做静态校验（bash -n），运行验证由所有者在主机完成
 - shell 脚本改动后必须 `bash -n` 全量校验（用 Git 自带 bash；协作机上 WSL bash 损坏）
 - workflow JSON 改动后必须校验：JSON 语法 + 拓扑一致性（连线双向引用、槽位、类型）；
   参考脚本模式见会话用的 PowerShell 拓扑断言
